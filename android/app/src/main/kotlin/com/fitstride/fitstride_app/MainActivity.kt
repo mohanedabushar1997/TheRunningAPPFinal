@@ -1,0 +1,5 @@
+package com.fitstride.fitstride_app
+
+import io.flutter.embedding.android.FlutterActivity
+
+class MainActivity : FlutterActivity()
