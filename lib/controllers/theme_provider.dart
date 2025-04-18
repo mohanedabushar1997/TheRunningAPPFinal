@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 // Define Colors (Task 4.1.2)
 class AppColors {
@@ -91,16 +92,98 @@ class ThemeProvider with ChangeNotifier {
       foregroundColor: Colors.white, // Title/icon color
       elevation: 1.0,
     ),
-    textTheme: const TextTheme(
-      // TODO: Define proper typography (Task 4.1.5)
-      bodyLarge: TextStyle(color: AppColors.lightTextDark),
-      bodyMedium: TextStyle(color: AppColors.lightTextDark),
-      titleMedium: TextStyle(color: AppColors.lightTextDark),
-      titleLarge: TextStyle(
-        color: AppColors.lightTextDark,
+    // Define proper typography (Task 4.1.5)
+    textTheme: TextTheme(
+      // Display styles for large headers
+      displayLarge: GoogleFonts.montserrat(
+        fontSize: 32,
         fontWeight: FontWeight.bold,
+        color: AppColors.lightTextDark,
+        letterSpacing: -0.5,
       ),
-      labelLarge: TextStyle(color: Colors.white), // Button text
+      displayMedium: GoogleFonts.montserrat(
+        fontSize: 28,
+        fontWeight: FontWeight.bold,
+        color: AppColors.lightTextDark,
+        letterSpacing: -0.5,
+      ),
+      displaySmall: GoogleFonts.montserrat(
+        fontSize: 24,
+        fontWeight: FontWeight.w600,
+        color: AppColors.lightTextDark,
+        letterSpacing: -0.25,
+      ),
+      
+      // Headline styles for section headers
+      headlineLarge: GoogleFonts.montserrat(
+        fontSize: 22,
+        fontWeight: FontWeight.w600,
+        color: AppColors.lightTextDark,
+      ),
+      headlineMedium: GoogleFonts.montserrat(
+        fontSize: 20,
+        fontWeight: FontWeight.w600,
+        color: AppColors.lightTextDark,
+      ),
+      headlineSmall: GoogleFonts.montserrat(
+        fontSize: 18,
+        fontWeight: FontWeight.w600,
+        color: AppColors.lightTextDark,
+      ),
+      
+      // Title styles for UI components
+      titleLarge: GoogleFonts.montserrat(
+        fontSize: 18,
+        fontWeight: FontWeight.w600,
+        color: AppColors.lightTextDark,
+      ),
+      titleMedium: GoogleFonts.montserrat(
+        fontSize: 16,
+        fontWeight: FontWeight.w500,
+        color: AppColors.lightTextDark,
+      ),
+      titleSmall: GoogleFonts.montserrat(
+        fontSize: 14,
+        fontWeight: FontWeight.w500,
+        color: AppColors.lightTextDark,
+      ),
+      
+      // Body styles for main content
+      bodyLarge: GoogleFonts.roboto(
+        fontSize: 16,
+        fontWeight: FontWeight.normal,
+        color: AppColors.lightTextDark,
+      ),
+      bodyMedium: GoogleFonts.roboto(
+        fontSize: 14,
+        fontWeight: FontWeight.normal,
+        color: AppColors.lightTextDark,
+      ),
+      bodySmall: GoogleFonts.roboto(
+        fontSize: 12,
+        fontWeight: FontWeight.normal,
+        color: AppColors.lightTextMedium,
+      ),
+      
+      // Label styles for buttons and inputs
+      labelLarge: GoogleFonts.roboto(
+        fontSize: 16,
+        fontWeight: FontWeight.w500,
+        color: Colors.white, // For buttons
+        letterSpacing: 0.5,
+      ),
+      labelMedium: GoogleFonts.roboto(
+        fontSize: 14,
+        fontWeight: FontWeight.w500,
+        color: AppColors.lightTextDark,
+        letterSpacing: 0.5,
+      ),
+      labelSmall: GoogleFonts.roboto(
+        fontSize: 12,
+        fontWeight: FontWeight.w500,
+        color: AppColors.lightTextMedium,
+        letterSpacing: 0.5,
+      ),
     ),
     buttonTheme: const ButtonThemeData(
       buttonColor: AppColors.primary,
@@ -110,11 +193,51 @@ class ThemeProvider with ChangeNotifier {
       style: ElevatedButton.styleFrom(
         backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(8),
+        ),
+      ),
+    ),
+    outlinedButtonTheme: OutlinedButtonThemeData(
+      style: OutlinedButton.styleFrom(
+        foregroundColor: AppColors.primary,
+        side: const BorderSide(color: AppColors.primary),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(8),
+        ),
+      ),
+    ),
+    textButtonTheme: TextButtonThemeData(
+      style: TextButton.styleFrom(
+        foregroundColor: AppColors.primary,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       ),
     ),
     floatingActionButtonTheme: const FloatingActionButtonThemeData(
       backgroundColor: AppColors.secondary,
       foregroundColor: Colors.black,
+    ),
+    inputDecorationTheme: InputDecorationTheme(
+      filled: true,
+      fillColor: AppColors.lightSurface,
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(8),
+        borderSide: BorderSide.none,
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(8),
+        borderSide: const BorderSide(color: AppColors.primary, width: 2),
+      ),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+    ),
+    cardTheme: CardTheme(
+      elevation: 2,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+      ),
+      clipBehavior: Clip.antiAlias,
     ),
     visualDensity: VisualDensity.adaptivePlatformDensity,
     useMaterial3: true,
@@ -146,30 +269,152 @@ class ThemeProvider with ChangeNotifier {
       foregroundColor: AppColors.darkTextLight, // Title/icon color
       elevation: 1.0,
     ),
-    textTheme: const TextTheme(
-      // TODO: Define proper typography (Task 4.1.5)
-      bodyLarge: TextStyle(color: AppColors.darkTextLight),
-      bodyMedium: TextStyle(color: AppColors.darkTextLight),
-      titleMedium: TextStyle(color: AppColors.darkTextLight),
-      titleLarge: TextStyle(
-        color: AppColors.darkTextLight,
+    // Define proper typography (Task 4.1.5)
+    textTheme: TextTheme(
+      // Display styles for large headers
+      displayLarge: GoogleFonts.montserrat(
+        fontSize: 32,
         fontWeight: FontWeight.bold,
+        color: AppColors.darkTextLight,
+        letterSpacing: -0.5,
       ),
-      labelLarge: TextStyle(color: Colors.black), // Button text
+      displayMedium: GoogleFonts.montserrat(
+        fontSize: 28,
+        fontWeight: FontWeight.bold,
+        color: AppColors.darkTextLight,
+        letterSpacing: -0.5,
+      ),
+      displaySmall: GoogleFonts.montserrat(
+        fontSize: 24,
+        fontWeight: FontWeight.w600,
+        color: AppColors.darkTextLight,
+        letterSpacing: -0.25,
+      ),
+      
+      // Headline styles for section headers
+      headlineLarge: GoogleFonts.montserrat(
+        fontSize: 22,
+        fontWeight: FontWeight.w600,
+        color: AppColors.darkTextLight,
+      ),
+      headlineMedium: GoogleFonts.montserrat(
+        fontSize: 20,
+        fontWeight: FontWeight.w600,
+        color: AppColors.darkTextLight,
+      ),
+      headlineSmall: GoogleFonts.montserrat(
+        fontSize: 18,
+        fontWeight: FontWeight.w600,
+        color: AppColors.darkTextLight,
+      ),
+      
+      // Title styles for UI components
+      titleLarge: GoogleFonts.montserrat(
+        fontSize: 18,
+        fontWeight: FontWeight.w600,
+        color: AppColors.darkTextLight,
+      ),
+      titleMedium: GoogleFonts.montserrat(
+        fontSize: 16,
+        fontWeight: FontWeight.w500,
+        color: AppColors.darkTextLight,
+      ),
+      titleSmall: GoogleFonts.montserrat(
+        fontSize: 14,
+        fontWeight: FontWeight.w500,
+        color: AppColors.darkTextLight,
+      ),
+      
+      // Body styles for main content
+      bodyLarge: GoogleFonts.roboto(
+        fontSize: 16,
+        fontWeight: FontWeight.normal,
+        color: AppColors.darkTextLight,
+      ),
+      bodyMedium: GoogleFonts.roboto(
+        fontSize: 14,
+        fontWeight: FontWeight.normal,
+        color: AppColors.darkTextLight,
+      ),
+      bodySmall: GoogleFonts.roboto(
+        fontSize: 12,
+        fontWeight: FontWeight.normal,
+        color: AppColors.darkTextMedium,
+      ),
+      
+      // Label styles for buttons and inputs
+      labelLarge: GoogleFonts.roboto(
+        fontSize: 16,
+        fontWeight: FontWeight.w500,
+        color: Colors.black, // For buttons
+        letterSpacing: 0.5,
+      ),
+      labelMedium: GoogleFonts.roboto(
+        fontSize: 14,
+        fontWeight: FontWeight.w500,
+        color: AppColors.darkTextLight,
+        letterSpacing: 0.5,
+      ),
+      labelSmall: GoogleFonts.roboto(
+        fontSize: 12,
+        fontWeight: FontWeight.w500,
+        color: AppColors.darkTextMedium,
+        letterSpacing: 0.5,
+      ),
     ),
     buttonTheme: const ButtonThemeData(
       buttonColor: AppColors.primary,
-      textTheme: ButtonTextTheme.primary, // Text color might need adjustment
+      textTheme: ButtonTextTheme.primary,
     ),
     elevatedButtonTheme: ElevatedButtonThemeData(
       style: ElevatedButton.styleFrom(
         backgroundColor: AppColors.primary,
-        foregroundColor: Colors.white, // Text on primary button
+        foregroundColor: Colors.white,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(8),
+        ),
+      ),
+    ),
+    outlinedButtonTheme: OutlinedButtonThemeData(
+      style: OutlinedButton.styleFrom(
+        foregroundColor: AppColors.primary,
+        side: const BorderSide(color: AppColors.primary),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(8),
+        ),
+      ),
+    ),
+    textButtonTheme: TextButtonThemeData(
+      style: TextButton.styleFrom(
+        foregroundColor: AppColors.primary,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       ),
     ),
     floatingActionButtonTheme: const FloatingActionButtonThemeData(
       backgroundColor: AppColors.secondary,
       foregroundColor: Colors.black,
+    ),
+    inputDecorationTheme: InputDecorationTheme(
+      filled: true,
+      fillColor: AppColors.darkSurface,
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(8),
+        borderSide: BorderSide.none,
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(8),
+        borderSide: const BorderSide(color: AppColors.primary, width: 2),
+      ),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+    ),
+    cardTheme: CardTheme(
+      elevation: 2,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+      ),
+      clipBehavior: Clip.antiAlias,
     ),
     visualDensity: VisualDensity.adaptivePlatformDensity,
     useMaterial3: true,

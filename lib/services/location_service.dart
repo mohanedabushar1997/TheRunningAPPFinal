@@ -1,138 +1,158 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
+import '../models/workout_point_model.dart';
 
+/// Service for handling location tracking and GPS functionality
 class LocationService {
+  // Stream controller for location updates
+  StreamController<Position>? _locationController;
   StreamSubscription<Position>? _positionStreamSubscription;
+  
+  // Settings
+  LocationAccuracy _accuracy = LocationAccuracy.high;
+  int _updateIntervalMs = 1000; // 1 second by default
+  
+  // Public stream getter
+  Stream<Position>? get locationStream => _locationController?.stream;
+  
+  // Current position
+  Position? _lastPosition;
+  Position? get lastPosition => _lastPosition;
+  
+  // Status
   bool _isTracking = false;
-
-  // Stream controller to broadcast position updates
-  final StreamController<Position> _positionController =
-      StreamController<Position>.broadcast();
-  Stream<Position> get positionStream => _positionController.stream;
-
-  // Check if location services are enabled
-  Future<bool> isLocationServiceEnabled() async {
-    return await Geolocator.isLocationServiceEnabled();
-  }
-
-  // Check and request location permissions
-  Future<LocationPermission> checkAndRequestPermission() async {
+  bool get isTracking => _isTracking;
+  
+  /// Initialize the location service
+  Future<void> initialize() async {
+    // Check if location services are enabled
+    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      throw Exception('Location services are disabled.');
+    }
+    
+    // Check for location permissions
     LocationPermission permission = await Geolocator.checkPermission();
     if (permission == LocationPermission.denied) {
       permission = await Geolocator.requestPermission();
       if (permission == LocationPermission.denied) {
-        // Permissions are denied, next time you could try requesting permissions again
-        // (this is also where Android's shouldShowRequestPermissionRationale returns true).
-        // According to Android guidelines your App should show an explanatory UI now.
-        print('Location permissions are denied');
-        return permission;
+        throw Exception('Location permissions are denied.');
       }
     }
-
+    
     if (permission == LocationPermission.deniedForever) {
-      // Permissions are denied forever, handle appropriately.
-      print(
-        'Location permissions are permanently denied, we cannot request permissions.',
-      );
-      return permission;
+      throw Exception('Location permissions are permanently denied.');
     }
-    // When we reach here, permissions are granted and we can continue accessing the position of the device.
-    print('Location permissions granted.');
-    return permission;
   }
-
-  // Start listening to location updates
-  Future<void> startTracking({
-    LocationAccuracy accuracy =
-        LocationAccuracy.high, // Default to high accuracy
-    int distanceFilter = 10, // Minimum distance (meters) to trigger update
-  }) async {
-    if (_isTracking) return; // Already tracking
-
-    bool serviceEnabled = await isLocationServiceEnabled();
-    if (!serviceEnabled) {
-      print("Location services disabled.");
-      // TODO: Optionally prompt user to enable location services
-      return;
+  
+  /// Set the accuracy level for GPS tracking
+  void setAccuracy(LocationAccuracy accuracy) {
+    _accuracy = accuracy;
+    // If currently tracking, restart with new accuracy
+    if (_isTracking) {
+      stopTracking();
+      startTracking();
     }
-
-    LocationPermission permission = await checkAndRequestPermission();
-    if (permission == LocationPermission.denied ||
-        permission == LocationPermission.deniedForever) {
-      print("Location permission not granted.");
-      return;
+  }
+  
+  /// Set the update interval for GPS tracking
+  void setUpdateInterval(int milliseconds) {
+    _updateIntervalMs = milliseconds;
+    // If currently tracking, restart with new interval
+    if (_isTracking) {
+      stopTracking();
+      startTracking();
     }
-
-    print("Starting location tracking...");
-    _isTracking = true;
-
-    // Configure location settings for Android
-    final LocationSettings locationSettings = AndroidSettings(
-      accuracy: accuracy,
-      distanceFilter: distanceFilter,
-      // foregroundNotificationConfig: const ForegroundNotificationConfig( // TODO: Configure foreground notification for background tracking
-      //     notificationText: "FitStride is tracking your workout",
-      //     notificationTitle: "Workout in Progress",
-      //     enableWakeLock: true,
-      // ),
-      // intervalDuration: const Duration(seconds: 5), // Optional: Adjust update interval
-    );
-
+  }
+  
+  /// Start tracking location
+  Future<void> startTracking() async {
+    if (_isTracking) return;
+    
+    await initialize();
+    
+    _locationController = StreamController<Position>.broadcast();
+    
+    // Get initial position
+    try {
+      _lastPosition = await Geolocator.getCurrentPosition(
+        desiredAccuracy: _accuracy,
+      );
+      _locationController?.add(_lastPosition!);
+    } catch (e) {
+      print('Error getting initial position: $e');
+    }
+    
+    // Start listening to position updates
     _positionStreamSubscription = Geolocator.getPositionStream(
-      locationSettings: locationSettings,
+      locationSettings: LocationSettings(
+        accuracy: _accuracy,
+        distanceFilter: 5, // Minimum distance (meters) before updates
+        timeLimit: Duration(milliseconds: _updateIntervalMs),
+      ),
     ).listen(
       (Position position) {
-        print("Position update: ${position.latitude}, ${position.longitude}");
-        _positionController.add(position); // Broadcast the position
+        _lastPosition = position;
+        _locationController?.add(position);
       },
       onError: (error) {
-        print("Error getting position stream: $error");
-        // TODO: Handle stream errors (e.g., notify user, attempt restart)
-        stopTracking();
-      },
-      onDone: () {
-        print("Position stream done.");
-        _isTracking = false;
+        print('Error from location stream: $error');
+        _locationController?.addError(error);
       },
     );
+    
+    _isTracking = true;
   }
-
-  // Stop listening to location updates
+  
+  /// Stop tracking location
   void stopTracking() {
-    print("Stopping location tracking...");
     _positionStreamSubscription?.cancel();
     _positionStreamSubscription = null;
+    _locationController?.close();
+    _locationController = null;
     _isTracking = false;
   }
-
-  // Get current location once
-  Future<Position?> getCurrentLocation() async {
-    bool serviceEnabled = await isLocationServiceEnabled();
-    if (!serviceEnabled) {
-      print("Location services disabled.");
-      return null;
-    }
-
-    LocationPermission permission = await checkAndRequestPermission();
-    if (permission == LocationPermission.denied ||
-        permission == LocationPermission.deniedForever) {
-      print("Location permission not granted.");
-      return null;
-    }
-
-    try {
-      return await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.medium,
-      );
-    } catch (e) {
-      print("Error getting current location: $e");
-      return null;
-    }
+  
+  /// Get the current position once (without starting a stream)
+  Future<Position> getCurrentPosition() async {
+    await initialize();
+    final position = await Geolocator.getCurrentPosition(
+      desiredAccuracy: _accuracy,
+    );
+    _lastPosition = position;
+    return position;
   }
-
-  // Dispose the stream controller when the service is no longer needed
+  
+  /// Convert a Position to a WorkoutPointModel
+  WorkoutPointModel positionToWorkoutPoint(
+    Position position, {
+    required int workoutId,
+    double? heartRate,
+  }) {
+    return WorkoutPointModel(
+      workoutId: workoutId,
+      latitude: position.latitude,
+      longitude: position.longitude,
+      elevation: position.altitude,
+      timestamp: DateTime.fromMillisecondsSinceEpoch(position.timestamp.millisecondsSinceEpoch),
+      speed: position.speed, // m/s
+      heartRate: heartRate,
+    );
+  }
+  
+  /// Calculate distance between two positions in meters
+  double calculateDistance(Position position1, Position position2) {
+    return Geolocator.distanceBetween(
+      position1.latitude,
+      position1.longitude,
+      position2.latitude,
+      position2.longitude,
+    );
+  }
+  
+  /// Dispose of resources
   void dispose() {
-    _positionStreamSubscription?.cancel();
-    _positionController.close();
+    stopTracking();
   }
 }

@@ -1,90 +1,158 @@
-import 'dart:math';
-import 'package:geolocator/geolocator.dart';
-// TODO: Import User model or access UserProvider for user data (weight, height, etc.)
+import 'package:flutter/foundation.dart';
+import '../models/workout_model.dart';
 
+/// Service for calculating various fitness metrics
 class CalculationService {
-  // Calculate distance between two points using Haversine formula
-  double calculateDistance(
-    double startLat,
-    double startLon,
-    double endLat,
-    double endLon,
-  ) {
-    const R = 6371e3; // Earth radius in meters
-    final phi1 = startLat * pi / 180; // φ, λ in radians
-    final phi2 = endLat * pi / 180;
-    final deltaPhi = (endLat - startLat) * pi / 180;
-    final deltaLambda = (endLon - startLon) * pi / 180;
-
-    final a =
-        sin(deltaPhi / 2) * sin(deltaPhi / 2) +
-        cos(phi1) * cos(phi2) * sin(deltaLambda / 2) * sin(deltaLambda / 2);
-    final c = 2 * atan2(sqrt(a), sqrt(1 - a));
-
-    final distance = R * c; // in meters
-    return distance;
+  // Constants for calculations
+  static const double _metToKcalRunning = 1.0; // MET value for running per minute per kg
+  static const double _metToKcalWalking = 0.7; // MET value for walking per minute per kg
+  
+  /// Calculate pace in seconds per kilometer from speed in m/s
+  double calculatePaceFromSpeed(double speedInMetersPerSecond) {
+    if (speedInMetersPerSecond <= 0) return 0;
+    // Convert m/s to seconds per kilometer
+    return 1000 / speedInMetersPerSecond;
   }
-
-  // Calculate total distance for a list of points
-  double calculateTotalDistance(List<Position> points) {
-    double totalDistance = 0;
-    if (points.length < 2) {
-      return 0;
-    }
-    for (int i = 0; i < points.length - 1; i++) {
-      totalDistance += calculateDistance(
-        points[i].latitude,
-        points[i].longitude,
-        points[i + 1].latitude,
-        points[i + 1].longitude,
-      );
-    }
-    return totalDistance; // in meters
+  
+  /// Calculate speed in m/s from pace in seconds per kilometer
+  double calculateSpeedFromPace(double paceInSecondsPerKm) {
+    if (paceInSecondsPerKm <= 0) return 0;
+    // Convert seconds per kilometer to m/s
+    return 1000 / paceInSecondsPerKm;
   }
-
-  // Calculate current pace (e.g., in seconds per kilometer)
-  // Requires distance in meters and duration in seconds
-  double calculatePace(double distanceMeters, int durationSeconds) {
-    if (distanceMeters <= 0 || durationSeconds <= 0) {
-      return 0.0; // Avoid division by zero or nonsensical pace
+  
+  /// Format pace as a string (e.g., "5:30 /km")
+  String formatPace(double paceInSecondsPerKm, {bool useImperial = false}) {
+    if (paceInSecondsPerKm <= 0) return "--:-- /km";
+    
+    // Convert to minutes and seconds
+    int totalSeconds = paceInSecondsPerKm.round();
+    int minutes = totalSeconds ~/ 60;
+    int seconds = totalSeconds % 60;
+    
+    // If using imperial (miles), convert
+    if (useImperial) {
+      // 1 mile = 1.60934 km
+      totalSeconds = (paceInSecondsPerKm * 1.60934).round();
+      minutes = totalSeconds ~/ 60;
+      seconds = totalSeconds % 60;
+      return "${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')} /mi";
     }
-    double distanceKm = distanceMeters / 1000.0;
-    double paceSecondsPerKm = durationSeconds / distanceKm;
-    return paceSecondsPerKm;
+    
+    return "${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')} /km";
   }
-
-  // Calculate average speed (e.g., in kilometers per hour)
-  // Requires distance in meters and duration in seconds
-  double calculateAverageSpeed(double distanceMeters, int durationSeconds) {
-    if (distanceMeters <= 0 || durationSeconds <= 0) {
-      return 0.0;
-    }
-    double distanceKm = distanceMeters / 1000.0;
-    double durationHours = durationSeconds / 3600.0;
-    double speedKph = distanceKm / durationHours;
-    return speedKph;
-  }
-
-  // Calculate calories burned (Example using METs - Metabolic Equivalent of Task)
-  // This is a simplified example and needs refinement based on Task 5.2.4
-  // Requires user weight (kg), duration (hours), and MET value for the activity
-  // TODO: Get user weight from UserProvider/UserModel
-  // TODO: Determine MET value based on activity type and intensity (speed/pace)
+  
+  /// Calculate calories burned based on workout data and user weight
   int calculateCaloriesBurned({
-    required double userWeightKg,
-    required double durationHours,
-    required double metValue, // e.g., Running ~ 7.0-12.0 depending on speed
+    required WorkoutType workoutType,
+    required Duration duration,
+    required double weightInKg,
+    double? distanceInKm,
   }) {
-    if (userWeightKg <= 0 || durationHours <= 0 || metValue <= 0) {
-      return 0;
+    // Basic calculation based on MET values
+    // MET = Metabolic Equivalent of Task
+    // Calories = MET * weight in kg * duration in hours
+    
+    final durationInMinutes = duration.inSeconds / 60;
+    if (durationInMinutes <= 0 || weightInKg <= 0) return 0;
+    
+    double metValue;
+    
+    switch (workoutType) {
+      case WorkoutType.run:
+        metValue = _metToKcalRunning;
+        // Adjust based on pace if distance is available
+        if (distanceInKm != null && distanceInKm > 0) {
+          final paceMinPerKm = (duration.inSeconds / 60) / distanceInKm;
+          // Adjust MET based on pace
+          if (paceMinPerKm < 4) { // Very fast running
+            metValue = 1.2;
+          } else if (paceMinPerKm < 5) { // Fast running
+            metValue = 1.1;
+          } else if (paceMinPerKm < 6) { // Moderate running
+            metValue = 1.0;
+          } else if (paceMinPerKm < 7) { // Slow running
+            metValue = 0.9;
+          } else { // Very slow running / jogging
+            metValue = 0.8;
+          }
+        }
+        break;
+      case WorkoutType.walk:
+        metValue = _metToKcalWalking;
+        break;
+      case WorkoutType.hike:
+        metValue = 0.85; // Hiking has higher MET than walking
+        break;
+      case WorkoutType.cycle:
+        metValue = 0.75; // Cycling MET
+        break;
+      case WorkoutType.treadmill:
+        metValue = 0.95; // Slightly less than outdoor running
+        break;
+      case WorkoutType.other:
+      default:
+        metValue = 0.8; // Default moderate activity
+        break;
     }
-    // Formula: Calories = MET * weight (kg) * duration (hours)
-    double calories = metValue * userWeightKg * durationHours;
+    
+    // Calculate calories
+    final calories = metValue * weightInKg * (durationInMinutes / 60);
     return calories.round();
   }
-
-  // TODO: Implement elevation gain/loss calculation (Task 5.2.5)
-  // double calculateElevationGain(List<Position> points) { ... }
-
-  // TODO: Implement smoothing algorithms for GPS jitter if needed (Task 5.2.2)
+  
+  /// Convert kilometers to miles
+  double kilometersToMiles(double kilometers) {
+    return kilometers / 1.60934;
+  }
+  
+  /// Convert miles to kilometers
+  double milesToKilometers(double miles) {
+    return miles * 1.60934;
+  }
+  
+  /// Format distance with appropriate unit
+  String formatDistance(double distanceInKm, {bool useImperial = false}) {
+    if (distanceInKm <= 0) return "0.00 km";
+    
+    if (useImperial) {
+      final miles = kilometersToMiles(distanceInKm);
+      return "${miles.toStringAsFixed(2)} mi";
+    }
+    
+    return "${distanceInKm.toStringAsFixed(2)} km";
+  }
+  
+  /// Format duration as a string (e.g., "1:23:45")
+  String formatDuration(Duration duration) {
+    String twoDigits(int n) => n.toString().padLeft(2, '0');
+    
+    String hours = twoDigits(duration.inHours);
+    String minutes = twoDigits(duration.inMinutes.remainder(60));
+    String seconds = twoDigits(duration.inSeconds.remainder(60));
+    
+    if (duration.inHours > 0) {
+      return "$hours:$minutes:$seconds";
+    } else {
+      return "$minutes:$seconds";
+    }
+  }
+  
+  /// Calculate average pace for a workout
+  double calculateAveragePace({
+    required double distanceInKm,
+    required Duration duration,
+  }) {
+    if (distanceInKm <= 0) return 0;
+    return duration.inSeconds / distanceInKm;
+  }
+  
+  /// Calculate average speed for a workout in km/h
+  double calculateAverageSpeed({
+    required double distanceInKm,
+    required Duration duration,
+  }) {
+    if (duration.inSeconds <= 0) return 0;
+    return (distanceInKm / duration.inSeconds) * 3600;
+  }
 }
