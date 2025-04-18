@@ -13,76 +13,38 @@ class TrainingPlansScreen extends StatefulWidget {
 
 class _TrainingPlansScreenState extends State<TrainingPlansScreen> {
   String _selectedCategory = 'All';
-  final List<String> _categories = ['All', '5K', '10K', 'Half Marathon', 'Marathon'];
-  
+  // Categories based on TrainingPlanModel goalType or level
+  final List<String> _categories = [
+    'All',
+    'Beginner',
+    'Intermediate',
+    'Advanced',
+    '5K',
+    '10K',
+    'Half Marathon',
+    'Marathon',
+  ];
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    // Listen for changes in the provider
     final trainingPlanProvider = Provider.of<TrainingPlanProvider>(context);
-    
-    // Sample training plans - would come from the provider in a real implementation
-    final trainingPlans = [
-      {
-        'id': '1',
-        'title': '5K Beginner Plan',
-        'category': '5K',
-        'duration': '8 weeks',
-        'workoutsPerWeek': 3,
-        'description': 'Perfect for first-time runners looking to complete their first 5K race.',
-        'difficulty': 'Beginner',
-      },
-      {
-        'id': '2',
-        'title': '5K Intermediate Plan',
-        'category': '5K',
-        'duration': '8 weeks',
-        'workoutsPerWeek': 4,
-        'description': 'For runners who have completed a 5K and want to improve their time.',
-        'difficulty': 'Intermediate',
-      },
-      {
-        'id': '3',
-        'title': '10K Beginner Plan',
-        'category': '10K',
-        'duration': '10 weeks',
-        'workoutsPerWeek': 3,
-        'description': 'Designed to help you build endurance and complete your first 10K race.',
-        'difficulty': 'Beginner',
-      },
-      {
-        'id': '4',
-        'title': '10K Intermediate Plan',
-        'category': '10K',
-        'duration': '10 weeks',
-        'workoutsPerWeek': 4,
-        'description': 'For runners who have completed a 10K and want to improve their performance.',
-        'difficulty': 'Intermediate',
-      },
-      {
-        'id': '5',
-        'title': 'Half Marathon Beginner Plan',
-        'category': 'Half Marathon',
-        'duration': '12 weeks',
-        'workoutsPerWeek': 4,
-        'description': 'Gradually builds your endurance to complete your first half marathon.',
-        'difficulty': 'Beginner',
-      },
-      {
-        'id': '6',
-        'title': 'Marathon Beginner Plan',
-        'category': 'Marathon',
-        'duration': '16 weeks',
-        'workoutsPerWeek': 4,
-        'description': 'Comprehensive plan to prepare you for your first marathon.',
-        'difficulty': 'Intermediate',
-      },
-    ];
-    
-    // Filter plans based on selected category
-    final filteredPlans = _selectedCategory == 'All'
-        ? trainingPlans
-        : trainingPlans.where((plan) => plan['category'] == _selectedCategory).toList();
-    
+    final availablePlans = trainingPlanProvider.availablePlans;
+    final currentPlanId = trainingPlanProvider.currentPlan?.id;
+
+    // Filter plans based on selected category (using level or goalType)
+    final filteredPlans =
+        _selectedCategory == 'All'
+            ? availablePlans
+            : availablePlans.where((plan) {
+              // Allow filtering by level (Beginner, Intermediate, Advanced) or goalType (5K, 10K, etc.)
+              final levelString =
+                  plan.level.toString().split('.').last.capitalize();
+              return levelString == _selectedCategory ||
+                  plan.goalType == _selectedCategory;
+            }).toList();
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Training Plans'),
@@ -103,86 +65,123 @@ class _TrainingPlansScreenState extends State<TrainingPlansScreen> {
             child: SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               child: Row(
-                children: _categories.map((category) {
-                  final isSelected = category == _selectedCategory;
-                  return Padding(
-                    padding: const EdgeInsets.only(right: 8.0),
-                    child: ChoiceChip(
-                      label: Text(category),
-                      selected: isSelected,
-                      selectedColor: theme.colorScheme.primary,
-                      labelStyle: TextStyle(
-                        color: isSelected ? theme.colorScheme.onPrimary : theme.colorScheme.onSurface,
-                        fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                      ),
-                      onSelected: (selected) {
-                        if (selected) {
-                          setState(() {
-                            _selectedCategory = category;
-                          });
-                        }
-                      },
-                    ),
-                  );
-                }).toList(),
+                children:
+                    _categories.map((category) {
+                      final isSelected = category == _selectedCategory;
+                      return Padding(
+                        padding: const EdgeInsets.only(right: 8.0),
+                        child: ChoiceChip(
+                          label: Text(category),
+                          selected: isSelected,
+                          selectedColor: theme.colorScheme.primary,
+                          labelStyle: TextStyle(
+                            color:
+                                isSelected
+                                    ? theme.colorScheme.onPrimary
+                                    : theme.colorScheme.onSurface,
+                            fontWeight:
+                                isSelected
+                                    ? FontWeight.bold
+                                    : FontWeight.normal,
+                          ),
+                          onSelected: (selected) {
+                            if (selected) {
+                              setState(() {
+                                _selectedCategory = category;
+                              });
+                            }
+                          },
+                        ),
+                      );
+                    }).toList(),
               ),
             ),
           ),
-          
+
           // Plans list
           Expanded(
-            child: filteredPlans.isEmpty
-                ? Center(
-                    child: Text(
-                      'No training plans available for $_selectedCategory',
-                      style: theme.textTheme.titleMedium,
+            child:
+                trainingPlanProvider.isLoading
+                    ? const Center(child: CircularProgressIndicator())
+                    : filteredPlans.isEmpty
+                    ? Center(
+                      child: Text(
+                        'No training plans available for $_selectedCategory',
+                        style: theme.textTheme.titleMedium,
+                        textAlign: TextAlign.center,
+                      ),
+                    )
+                    : ListView.builder(
+                      padding: const EdgeInsets.only(
+                        left: 16.0,
+                        right: 16.0,
+                        bottom: 16.0,
+                      ), // Adjust padding
+                      itemCount: filteredPlans.length,
+                      itemBuilder: (context, index) {
+                        final plan = filteredPlans[index];
+                        final bool isCurrentPlan = plan.id == currentPlanId;
+                        return _buildPlanCard(
+                          context,
+                          plan,
+                          isCurrentPlan,
+                          trainingPlanProvider,
+                        );
+                      },
                     ),
-                  )
-                : ListView.builder(
-                    padding: const EdgeInsets.all(16.0),
-                    itemCount: filteredPlans.length,
-                    itemBuilder: (context, index) {
-                      final plan = filteredPlans[index];
-                      return _buildPlanCard(context, plan);
-                    },
-                  ),
           ),
         ],
       ),
     );
   }
-  
-  Widget _buildPlanCard(BuildContext context, Map<String, String> plan) {
+
+  Widget _buildPlanCard(
+    BuildContext context,
+    TrainingPlanModel plan,
+    bool isCurrentPlan,
+    TrainingPlanProvider provider,
+  ) {
     final theme = Theme.of(context);
-    
+
     // Determine difficulty color
     Color difficultyColor;
-    switch (plan['difficulty']) {
-      case 'Beginner':
+    String difficultyText = plan.level.toString().split('.').last.capitalize();
+    switch (plan.level) {
+      case TrainingPlanLevel.beginner:
         difficultyColor = Colors.green;
         break;
-      case 'Intermediate':
+      case TrainingPlanLevel.intermediate:
         difficultyColor = Colors.orange;
         break;
-      case 'Advanced':
+      case TrainingPlanLevel.advanced:
         difficultyColor = Colors.red;
         break;
       default:
         difficultyColor = theme.colorScheme.primary;
     }
-    
+
     return Card(
-      elevation: 2,
+      elevation: isCurrentPlan ? 4 : 2, // Highlight current plan
       margin: const EdgeInsets.only(bottom: 16.0),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
+        side:
+            isCurrentPlan
+                ? BorderSide(
+                  color: theme.colorScheme.primary,
+                  width: 2,
+                ) // Border for current plan
+                : BorderSide.none,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Header with category and difficulty
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+            padding: const EdgeInsets.symmetric(
+              horizontal: 16.0,
+              vertical: 8.0,
+            ),
             decoration: BoxDecoration(
               color: theme.colorScheme.primary.withOpacity(0.1),
               borderRadius: const BorderRadius.only(
@@ -194,20 +193,23 @@ class _TrainingPlansScreenState extends State<TrainingPlansScreen> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  plan['category'] ?? '',
+                  plan.goalType ?? 'General', // Use goalType or fallback
                   style: theme.textTheme.titleSmall?.copyWith(
                     color: theme.colorScheme.primary,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8.0,
+                    vertical: 4.0,
+                  ),
                   decoration: BoxDecoration(
                     color: difficultyColor.withOpacity(0.2),
                     borderRadius: BorderRadius.circular(4),
                   ),
                   child: Text(
-                    plan['difficulty'] ?? '',
+                    difficultyText,
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: difficultyColor,
                       fontWeight: FontWeight.bold,
@@ -217,7 +219,7 @@ class _TrainingPlansScreenState extends State<TrainingPlansScreen> {
               ],
             ),
           ),
-          
+
           // Plan content
           Padding(
             padding: const EdgeInsets.all(16.0),
@@ -225,18 +227,18 @@ class _TrainingPlansScreenState extends State<TrainingPlansScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  plan['title'] ?? '',
+                  plan.name,
                   style: theme.textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.bold,
                   ),
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  plan['description'] ?? '',
+                  plan.description ?? 'No description available.',
                   style: theme.textTheme.bodyMedium,
                 ),
                 const SizedBox(height: 16),
-                
+
                 // Plan details
                 Row(
                   children: [
@@ -244,19 +246,20 @@ class _TrainingPlansScreenState extends State<TrainingPlansScreen> {
                       context,
                       Icons.calendar_today,
                       'Duration',
-                      plan['duration'] ?? '',
+                      '${plan.durationWeeks} weeks',
                     ),
                     const SizedBox(width: 24),
                     _buildDetailItem(
                       context,
                       Icons.fitness_center,
                       'Workouts',
-                      '${plan['workoutsPerWeek']} per week',
+                      // Calculate average workouts per week (approximate)
+                      '${(plan.sessions.length / plan.durationWeeks).round()} per week',
                     ),
                   ],
                 ),
                 const SizedBox(height: 16),
-                
+
                 // Action buttons
                 Row(
                   children: [
@@ -265,18 +268,47 @@ class _TrainingPlansScreenState extends State<TrainingPlansScreen> {
                         child: const Text('VIEW DETAILS'),
                         onPressed: () {
                           // Navigate to plan details
-                          // Navigator.pushNamed(context, '/training_plan_details', arguments: plan['id']);
+                          Navigator.pushNamed(
+                            context,
+                            '/training_plan_details',
+                            arguments: plan.id.toString(), // Pass ID
+                          );
                         },
                       ),
                     ),
                     const SizedBox(width: 16),
                     Expanded(
-                      child: PrimaryButton(
-                        text: 'START PLAN',
-                        onPressed: () {
-                          _showStartPlanDialog(context, plan);
-                        },
-                      ),
+                      child:
+                          isCurrentPlan
+                              ? ElevatedButton(
+                                // Show different button if active
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor:
+                                      Colors.grey, // Indicate inactive state
+                                ),
+                                onPressed: () {
+                                  _showDeactivatePlanDialog(
+                                    context,
+                                    plan,
+                                    provider,
+                                  );
+                                },
+                                child: const Text('ACTIVE PLAN'),
+                              )
+                              : PrimaryButton(
+                                text: 'START PLAN',
+                                onPressed:
+                                    plan.id == null
+                                        ? null
+                                        : () {
+                                          // Disable if ID is null
+                                          _showStartPlanDialog(
+                                            context,
+                                            plan,
+                                            provider,
+                                          );
+                                        },
+                              ),
                     ),
                   ],
                 ),
@@ -287,17 +319,18 @@ class _TrainingPlansScreenState extends State<TrainingPlansScreen> {
       ),
     );
   }
-  
-  Widget _buildDetailItem(BuildContext context, IconData icon, String label, String value) {
+
+  Widget _buildDetailItem(
+    BuildContext context,
+    IconData icon,
+    String label,
+    String value,
+  ) {
     final theme = Theme.of(context);
-    
+
     return Row(
       children: [
-        Icon(
-          icon,
-          size: 16,
-          color: theme.colorScheme.primary,
-        ),
+        Icon(icon, size: 16, color: theme.colorScheme.primary),
         const SizedBox(width: 4),
         Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -319,124 +352,180 @@ class _TrainingPlansScreenState extends State<TrainingPlansScreen> {
       ],
     );
   }
-  
+
   void _showInfoDialog(BuildContext context) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('About Training Plans'),
-        content: const SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                'Training plans help you prepare for specific race distances with structured workouts.',
-              ),
-              SizedBox(height: 16),
-              Text(
-                'Each plan includes:',
-                style: TextStyle(fontWeight: FontWeight.bold),
-              ),
-              SizedBox(height: 8),
-              Text('• Progressive workouts that build your endurance'),
-              Text('• Rest days for recovery'),
-              Text('• Mix of easy runs, tempo runs, and long runs'),
-              Text('• Weekly schedule you can follow'),
-              SizedBox(height: 16),
-              Text(
-                'Choose a plan that matches your current fitness level and goals. Beginner plans are perfect if you\'re new to running or the distance.',
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            child: const Text('CLOSE'),
-            onPressed: () => Navigator.of(context).pop(),
-          ),
-        ],
-      ),
-    );
-  }
-  
-  void _showStartPlanDialog(BuildContext context, Map<String, String> plan) {
-    final theme = Theme.of(context);
-    
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Start ${plan['title']}?'),
-        content: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              'You\'re about to start a ${plan['duration']} training plan with ${plan['workoutsPerWeek']} workouts per week.',
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              'This will:',
-              style: TextStyle(fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            const Text('• Add scheduled workouts to your calendar'),
-            const Text('• Track your progress throughout the plan'),
-            const Text('• Provide guidance for each workout'),
-            const SizedBox(height: 16),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: theme.colorScheme.surface,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: theme.dividerColor),
-              ),
-              child: Row(
+      builder:
+          (context) => AlertDialog(
+            title: const Text('About Training Plans'),
+            content: const SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(
-                    Icons.info_outline,
-                    color: theme.colorScheme.primary,
-                    size: 20,
+                  Text(
+                    'Training plans help you prepare for specific race distances with structured workouts.',
                   ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'You can modify or cancel the plan at any time.',
-                      style: theme.textTheme.bodySmall,
-                    ),
+                  SizedBox(height: 16),
+                  Text(
+                    'Each plan includes:',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  SizedBox(height: 8),
+                  Text('• Progressive workouts that build your endurance'),
+                  Text('• Rest days for recovery'),
+                  Text('• Mix of easy runs, tempo runs, and long runs'),
+                  Text('• Weekly schedule you can follow'),
+                  SizedBox(height: 16),
+                  Text(
+                    'Choose a plan that matches your current fitness level and goals. Beginner plans are perfect if you\'re new to running or the distance.',
                   ),
                 ],
               ),
             ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            child: const Text('CANCEL'),
-            onPressed: () => Navigator.of(context).pop(),
+            actions: [
+              TextButton(
+                child: const Text('CLOSE'),
+                onPressed: () => Navigator.of(context).pop(),
+              ),
+            ],
           ),
-          TextButton(
-            child: const Text('START PLAN'),
-            onPressed: () {
-              // Start training plan
-              final trainingPlanProvider = Provider.of<TrainingPlanProvider>(context, listen: false);
-              // trainingPlanProvider.startTrainingPlan(plan['id']);
-              
-              // Show confirmation and navigate back
-              Navigator.of(context).pop();
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('${plan['title']} started successfully!'),
-                  duration: const Duration(seconds: 2),
-                ),
-              );
-              
-              // Navigate to home or training plan detail
-              // Navigator.popUntil(context, (route) => route.isFirst);
-            },
-          ),
-        ],
-      ),
     );
+  }
+
+  void _showStartPlanDialog(
+    BuildContext context,
+    TrainingPlanModel plan,
+    TrainingPlanProvider provider,
+  ) {
+    if (plan.id == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Error: Cannot start plan without an ID.'),
+        ),
+      );
+      return;
+    }
+    final theme = Theme.of(context);
+
+    showDialog(
+      context: context,
+      builder:
+          (context) => AlertDialog(
+            title: Text('Start ${plan.name}?'),
+            content: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'You\'re about to start a ${plan.durationWeeks} week training plan.',
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  'This will:',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                const Text('• Activate this plan and track your progress'),
+                const Text('• Deactivate any other currently active plan'),
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.surface,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: theme.dividerColor),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.info_outline,
+                        color: theme.colorScheme.primary,
+                        size: 20,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'You can switch or stop the plan at any time.',
+                          style: theme.textTheme.bodySmall,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                child: const Text('CANCEL'),
+                onPressed: () => Navigator.of(context).pop(),
+              ),
+              TextButton(
+                child: const Text('START PLAN'),
+                onPressed: () async {
+                  // Make async
+                  Navigator.of(context).pop(); // Close dialog first
+                  await provider.selectPlan(plan.id!); // Call provider method
+
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('${plan.name} started successfully!'),
+                      duration: const Duration(seconds: 2),
+                    ),
+                  );
+                  // Optionally navigate somewhere else, e.g., back or to plan details
+                },
+              ),
+            ],
+          ),
+    );
+  }
+
+  void _showDeactivatePlanDialog(
+    BuildContext context,
+    TrainingPlanModel plan,
+    TrainingPlanProvider provider,
+  ) {
+    showDialog(
+      context: context,
+      builder:
+          (context) => AlertDialog(
+            title: Text('Stop ${plan.name}?'),
+            content: const Text(
+              'Do you want to stop tracking this training plan? Your progress will be saved, but the plan will no longer be active.',
+            ),
+            actions: [
+              TextButton(
+                child: const Text('CANCEL'),
+                onPressed: () => Navigator.of(context).pop(),
+              ),
+              TextButton(
+                child: const Text('STOP PLAN'),
+                onPressed: () async {
+                  Navigator.of(context).pop(); // Close dialog
+                  await provider
+                      .deactivateCurrentPlan(); // Call provider method
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('${plan.name} stopped.'),
+                      duration: const Duration(seconds: 2),
+                    ),
+                  );
+                },
+              ),
+            ],
+          ),
+    );
+  }
+}
+
+// Helper extension for capitalizing strings (optional but used above)
+extension StringExtension on String {
+  String capitalize() {
+    if (this.isEmpty) {
+      return "";
+    }
+    return "${this[0].toUpperCase()}${this.substring(1).toLowerCase()}";
   }
 }

@@ -6,6 +6,7 @@ import '../models/workout_model.dart';
 import '../models/user_model.dart';
 import '../services/location_service.dart';
 import '../services/calculation_service.dart';
+import 'workout_provider.dart'; // Import WorkoutProvider to save
 
 enum TrackingState { idle, tracking, paused }
 
@@ -14,6 +15,8 @@ class TrackingProvider with ChangeNotifier {
   final LocationService _locationService;
   final CalculationService _calculationService;
   final UserModel? _user;
+  // Inject WorkoutProvider for saving
+  WorkoutProvider? _workoutProvider;
 
   TrackingState _state = TrackingState.idle;
   TrackingState get state => _state;
@@ -31,16 +34,43 @@ class TrackingProvider with ChangeNotifier {
   Position? _lastPosition;
   WorkoutType _workoutType = WorkoutType.run;
 
+  // Goal data
+  double? _targetDistance; // in km
+  Duration? _targetDuration;
+
+  // --- Getters for UI ---
   Position? get currentPosition => _currentPosition;
-  double get currentDistance => _currentDistance;
-  Duration get currentDuration => _currentDuration;
+  double get distance => _currentDistance; // Renamed for UI
+  Duration get elapsedTime => _currentDuration; // Renamed for UI
   double get currentPace => _currentPace;
-  int get currentCalories => _currentCalories;
+  int get caloriesBurned => _currentCalories; // Renamed for UI
   List<WorkoutPointModel> get routePoints => _routePoints;
   double get maxSpeed => _maxSpeed;
   double get elevationGain => _elevationGain;
   double get elevationLoss => _elevationLoss;
   WorkoutType get workoutType => _workoutType;
+  double? get distanceGoal => _targetDistance; // Renamed for UI
+  Duration? get durationGoal => _targetDuration; // Renamed for UI
+
+  bool get isTracking => _state == TrackingState.tracking;
+  bool get isPaused => _state == TrackingState.paused;
+  bool get isIdle => _state == TrackingState.idle;
+
+  bool get hasGoal => _targetDistance != null || _targetDuration != null;
+  bool get hasDistanceGoal => _targetDistance != null;
+
+  double get goalProgress {
+    if (_targetDistance != null && _targetDistance! > 0) {
+      return (_currentDistance / _targetDistance!).clamp(0.0, 1.0);
+    } else if (_targetDuration != null && _targetDuration!.inSeconds > 0) {
+      return (_currentDuration.inSeconds / _targetDuration!.inSeconds).clamp(
+        0.0,
+        1.0,
+      );
+    }
+    return 0.0;
+  }
+  // --- End Getters ---
 
   // Stream subscription for location updates
   StreamSubscription<Position>? _positionStreamSubscription;
@@ -51,9 +81,15 @@ class TrackingProvider with ChangeNotifier {
     required LocationService locationService,
     required CalculationService calculationService,
     UserModel? user,
+    // WorkoutProvider is optional here, can be set later
   }) : _locationService = locationService,
        _calculationService = calculationService,
        _user = user;
+
+  // Method to set WorkoutProvider after initialization (if needed)
+  void setWorkoutProvider(WorkoutProvider provider) {
+    _workoutProvider = provider;
+  }
 
   // Set workout type before starting tracking
   void setWorkoutType(WorkoutType type) {
@@ -61,100 +97,152 @@ class TrackingProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  // Start tracking a new workout
-  Future<void> startTracking() async {
+  // --- Goal Setting Methods ---
+  void setDistanceGoal(double distanceKm) {
+    _targetDistance = distanceKm;
+    _targetDuration = null; // Clear duration goal if setting distance goal
+    print("Distance goal set: $distanceKm km");
+    notifyListeners();
+  }
+
+  void setDurationGoal(int durationSeconds) {
+    _targetDuration = Duration(seconds: durationSeconds);
+    _targetDistance = null; // Clear distance goal if setting duration goal
+    print("Duration goal set: ${Duration(seconds: durationSeconds)}");
+    notifyListeners();
+  }
+
+  void clearGoals() {
+    _targetDistance = null;
+    _targetDuration = null;
+    print("Goals cleared");
+    notifyListeners();
+  }
+  // --- End Goal Setting Methods ---
+
+  // --- Renamed Tracking Control Methods for UI ---
+  Future<void> startWorkout() async {
+    // Renamed from startTracking
     if (_state != TrackingState.idle) return;
-    
+
     _state = TrackingState.tracking;
-    _resetTrackingData();
+    _resetTrackingData(); // Resets goals as well
     _startTimer();
-    
+
     // Initialize location service
     try {
       await _locationService.initialize();
       await _locationService.startTracking();
-      
+
       // Listen to location updates
       _positionStreamSubscription = _locationService.locationStream?.listen(
         _updateMetrics,
         onError: (error) {
           print('Error from location stream: $error');
+          // TODO: Handle location errors more gracefully (e.g., notify user)
         },
       );
-      
+
       notifyListeners();
     } catch (e) {
-      print('Error starting tracking: $e');
-      stopTracking();
+      print('Error starting workout: $e');
+      await stopWorkout(save: false); // Ensure cleanup if start fails
     }
   }
 
-  // Pause the current tracking session
-  void pauseTracking() {
+  void pauseWorkout() {
+    // Renamed from pauseTracking
     if (_state != TrackingState.tracking) return;
-    
+
     _state = TrackingState.paused;
     _stopTimer();
-    
+
     // Pause location updates (but don't dispose)
     _positionStreamSubscription?.pause();
-    
+
     notifyListeners();
   }
 
-  // Resume a paused tracking session
-  void resumeTracking() {
+  void resumeWorkout() {
+    // Renamed from resumeTracking
     if (_state != TrackingState.paused) return;
-    
+
     _state = TrackingState.tracking;
     _startTimer();
-    
+
     // Resume location updates
     _positionStreamSubscription?.resume();
-    
+
     notifyListeners();
   }
 
-  // Stop tracking and prepare data for saving
-  Future<WorkoutModel?> stopTracking() async {
+  // Combined stop method
+  Future<WorkoutModel?> stopWorkout({required bool save}) async {
     if (_state == TrackingState.idle) return null;
-    
+
     final previousState = _state;
     _state = TrackingState.idle;
     _stopTimer();
-    
+
     // Stop location service
     _positionStreamSubscription?.cancel();
     _positionStreamSubscription = null;
     _locationService.stopTracking();
-    
-    // Only create a workout if we were actually tracking (not just paused)
-    if (previousState == TrackingState.tracking || 
-        (previousState == TrackingState.paused && _currentDuration.inSeconds > 10)) {
-      
+
+    WorkoutModel? workout;
+    // Only create a workout if we were actually tracking or paused long enough
+    if (previousState == TrackingState.tracking ||
+        (previousState == TrackingState.paused &&
+            _currentDuration.inSeconds > 10)) {
       // Create workout model from tracking data
-      final workout = WorkoutModel(
-        date: DateTime.now(),
+      workout = WorkoutModel(
+        date: DateTime.now().subtract(
+          _currentDuration,
+        ), // Use start time approx
         type: _workoutType,
         duration: _currentDuration,
-        distance: _currentDistance,
-        calories: _currentCalories,
-        avgPace: _currentPace,
+        distance:
+            _currentDistance > 0 ? _currentDistance : null, // Only set if > 0
+        calories: _currentCalories > 0 ? _currentCalories : null,
+        avgPace: _currentPace > 0 ? _currentPace : null,
         avgSpeed: _calculationService.calculateSpeedFromPace(_currentPace),
-        maxSpeed: _maxSpeed,
-        elevationGain: _elevationGain,
-        elevationLoss: _elevationLoss,
+        maxSpeed: _maxSpeed > 0 ? _maxSpeed : null,
+        elevationGain: _elevationGain > 0 ? _elevationGain : null,
+        elevationLoss: _elevationLoss > 0 ? _elevationLoss : null,
         routePoints: List.from(_routePoints),
         isManualEntry: false,
+        // TODO: Add goal met status?
       );
-      
-      notifyListeners();
-      return workout;
+
+      if (save && workout != null) {
+        if (_workoutProvider != null) {
+          print("Saving workout...");
+          await _workoutProvider!.saveWorkout(workout);
+        } else {
+          print("Error: WorkoutProvider not set, cannot save workout.");
+          // Optionally return the workout anyway, or null to indicate save failure
+          workout = null;
+        }
+      } else {
+        print("Workout stopped, not saving.");
+      }
     }
-    
+
+    // Reset data AFTER creating/saving the model
+    _resetTrackingData();
     notifyListeners();
-    return null;
+    return workout; // Return the workout (saved or not) or null
   }
+
+  // Specific methods called by UI
+  Future<WorkoutModel?> stopAndSaveWorkout() async {
+    return await stopWorkout(save: true);
+  }
+
+  Future<void> discardWorkout() async {
+    await stopWorkout(save: false);
+  }
+  // --- End Renamed Methods ---
 
   // Reset all tracking data for a new session
   void _resetTrackingData() {
@@ -168,18 +256,32 @@ class TrackingProvider with ChangeNotifier {
     _maxSpeed = 0.0;
     _elevationGain = 0.0;
     _elevationLoss = 0.0;
+    // Do not reset _workoutType here, it's set before starting
+    // Reset goals? Or keep them until explicitly cleared? Let's keep them for now.
+    // _targetDistance = null;
+    // _targetDuration = null;
   }
 
   // Start the duration timer
   void _startTimer() {
     _timer?.cancel();
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      _currentDuration += const Duration(seconds: 1);
-      
-      // Update calories every second based on duration
-      _updateCalories();
-      
-      notifyListeners();
+      if (_state == TrackingState.tracking) {
+        // Only increment if tracking
+        _currentDuration += const Duration(seconds: 1);
+
+        // Update calories every second based on duration
+        _updateCalories();
+
+        // Check if duration goal met
+        if (_targetDuration != null && _currentDuration >= _targetDuration!) {
+          print("Duration goal met!");
+          // TODO: Notify user, potentially auto-stop?
+          // Maybe set a flag? _durationGoalMet = true;
+        }
+
+        notifyListeners();
+      }
     });
   }
 
@@ -191,84 +293,113 @@ class TrackingProvider with ChangeNotifier {
 
   // Update metrics based on new position data
   void _updateMetrics(Position newPosition) {
+    // Ignore inaccurate points? (Optional based on settings)
+    // if (newPosition.accuracy > 50) return;
+
     _currentPosition = newPosition;
-    
-    // If this is the first position, just store it
+
+    // If this is the first valid position, just store it
     if (_lastPosition == null) {
       _lastPosition = newPosition;
-      
-      // Create first route point
+      final point = _locationService.positionToWorkoutPoint(
+        newPosition,
+        workoutId: 0,
+      );
+      _routePoints.add(point);
+      notifyListeners();
+      return;
+    }
+
+    // Calculate distance increment
+    final distanceIncrement = _locationService.calculateDistance(
+      _lastPosition!,
+      newPosition,
+    ); // Distance in meters
+
+    // Only update if movement is significant? (Avoid GPS jitter accumulation)
+    // Use a smaller threshold for more responsive distance updates
+    if (distanceIncrement > 0.5) {
+      // Threshold in meters
+      _currentDistance +=
+          distanceIncrement / 1000; // Convert meters to kilometers
+
+      // Update pace (seconds per kilometer)
+      if (_currentDistance > 0) {
+        _currentPace = _currentDuration.inSeconds / _currentDistance;
+      }
+
+      // Update max speed (convert m/s to km/h)
+      final currentSpeedKmh = newPosition.speed * 3.6;
+      if (currentSpeedKmh > _maxSpeed) {
+        _maxSpeed = currentSpeedKmh;
+      }
+
+      // Update elevation data
+      if (_lastPosition!.altitude != 0 && newPosition.altitude != 0) {
+        final elevationDiff = newPosition.altitude - _lastPosition!.altitude;
+        // Add smoothing or threshold?
+        if (elevationDiff.abs() > 0.5) {
+          // Threshold for elevation change
+          if (elevationDiff > 0) {
+            _elevationGain += elevationDiff;
+          } else {
+            _elevationLoss += elevationDiff.abs();
+          }
+        }
+      }
+
+      // Create route point
       final point = _locationService.positionToWorkoutPoint(
         newPosition,
         workoutId: 0, // Temporary ID, will be updated when saved
       );
       _routePoints.add(point);
-      
-      notifyListeners();
-      return;
-    }
-    
-    // Calculate distance increment
-    final distanceIncrement = _locationService.calculateDistance(
-      _lastPosition!,
-      newPosition,
-    ) / 1000; // Convert meters to kilometers
-    
-    // Update total distance
-    _currentDistance += distanceIncrement;
-    
-    // Update pace (seconds per kilometer)
-    if (_currentDistance > 0) {
-      _currentPace = _currentDuration.inSeconds / _currentDistance;
-    }
-    
-    // Update max speed
-    if (newPosition.speed > _maxSpeed) {
-      _maxSpeed = newPosition.speed;
-    }
-    
-    // Update elevation data
-    if (_lastPosition!.altitude != 0 && newPosition.altitude != 0) {
-      final elevationDiff = newPosition.altitude - _lastPosition!.altitude;
-      if (elevationDiff > 0) {
-        _elevationGain += elevationDiff;
-      } else {
-        _elevationLoss += elevationDiff.abs();
+
+      // Update last position
+      _lastPosition = newPosition;
+
+      // Update calories
+      _updateCalories();
+
+      // Check if distance goal met
+      if (_targetDistance != null && _currentDistance >= _targetDistance!) {
+        print("Distance goal met!");
+        // TODO: Notify user, potentially auto-stop?
+        // Maybe set a flag? _distanceGoalMet = true;
       }
+
+      notifyListeners();
+    } else {
+      // Even if distance didn't change significantly, update position for map?
+      // Or maybe only add points if distance > threshold?
+      // For now, just update the current position state
+      notifyListeners();
     }
-    
-    // Create route point
-    final point = _locationService.positionToWorkoutPoint(
-      newPosition,
-      workoutId: 0, // Temporary ID, will be updated when saved
-    );
-    _routePoints.add(point);
-    
-    // Update last position
-    _lastPosition = newPosition;
-    
-    // Update calories
-    _updateCalories();
-    
-    notifyListeners();
   }
-  
+
   // Update calorie calculation
   void _updateCalories() {
     // Get user weight or use default
     final userWeight = _user?.weight ?? 70.0; // Default to 70kg if no user data
-    
+
     // Calculate calories
     _currentCalories = _calculationService.calculateCaloriesBurned(
       workoutType: _workoutType,
       duration: _currentDuration,
       weightInKg: userWeight,
       distanceInKm: _currentDistance,
+      // Add avgSpeed if needed by calculation service
+      // avgSpeedKmh: _calculationService.calculateSpeedFromPace(_currentPace),
     );
   }
 
   // Add a manual location point (for testing or manual entry)
-  void addManualPoint(double latitude, double longitude, {double? elevation, double? speed}) {
+  void addManualPoint(
+    double latitude,
+    double longitude, {
+    double? elevation,
+    double? speed,
+  }) {
     final position = Position(
       latitude: latitude,
       longitude: longitude,
@@ -276,12 +407,12 @@ class TrackingProvider with ChangeNotifier {
       accuracy: 0,
       altitude: elevation ?? 0,
       heading: 0,
-      speed: speed ?? 0,
+      speed: speed ?? 0, // m/s
       speedAccuracy: 0,
       altitudeAccuracy: 0,
       headingAccuracy: 0,
     );
-    
+
     _updateMetrics(position);
   }
 
