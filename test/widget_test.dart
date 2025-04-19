@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:geolocator/geolocator.dart'; // Import geolocator for Position and LocationAccuracy
 
-import 'package:fitstride_app/main.dart';
+import 'package:fitstride_app/app.dart'; // Import the app widget
 import 'package:fitstride_app/services/location_service.dart'; // Import service interface
 import 'package:fitstride_app/services/calculation_service.dart'; // Import service interface
 import 'package:fitstride_app/services/audio_service.dart'; // Import service interface

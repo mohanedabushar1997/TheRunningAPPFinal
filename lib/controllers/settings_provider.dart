@@ -65,6 +65,10 @@ class SettingsProvider with ChangeNotifier {
   String get reminderTime => _reminderTime;
   List<bool> get reminderDays => _reminderDays;
 
+  // Onboarding status
+  bool _isOnboardingComplete = false;
+  bool get isOnboardingComplete => _isOnboardingComplete;
+
   SettingsProvider() {
     _loadSettings();
   }
@@ -108,6 +112,9 @@ class SettingsProvider with ChangeNotifier {
     if (reminderDaysList != null && reminderDaysList.length == 7) {
       _reminderDays = reminderDaysList.map((day) => day == 'true').toList();
     }
+
+    // Load onboarding status
+    _isOnboardingComplete = _prefs?.getBool('onboarding_complete') ?? false;
 
     // Also load from database for more complex settings
     await _loadSettingsFromDatabase();
@@ -299,6 +306,7 @@ class SettingsProvider with ChangeNotifier {
     _workoutReminders = false;
     _reminderTime = '18:00';
     _reminderDays = [false, true, true, true, true, true, false];
+    _isOnboardingComplete = false; // Reset onboarding status on reset
 
     // Save all defaults to SharedPreferences
     await _prefs?.setString('units', _units);
@@ -324,6 +332,7 @@ class SettingsProvider with ChangeNotifier {
       'reminder_days',
       _reminderDays.map((day) => day.toString()).toList(),
     );
+    await _prefs?.setBool('onboarding_complete', _isOnboardingComplete);
 
     // Also reset database settings
     await _resetDatabaseSettings();

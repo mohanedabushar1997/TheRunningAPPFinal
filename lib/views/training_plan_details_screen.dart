@@ -476,10 +476,14 @@ class _TrainingPlanDetailsScreenState extends State<TrainingPlanDetailsScreen> {
       child: InkWell(
         onTap:
             isRestDay
-                ? null
+                ? null // Disable tap for rest days
                 : () {
-                  // Disable tap for rest days
-                  _showWorkoutDetailsDialog(context, session);
+                  // Navigate to ActiveWorkoutScreen, passing the session
+                  Navigator.pushNamed(
+                    context,
+                    '/active_workout',
+                    arguments: session,
+                  );
                 },
         borderRadius: BorderRadius.circular(12),
         child: Padding(

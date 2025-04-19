@@ -134,7 +134,8 @@ class DatabaseHelper {
         elevation_gain REAL,
         elevation_loss REAL,
         notes TEXT,
-        is_manual_entry INTEGER DEFAULT 0
+        is_manual_entry INTEGER DEFAULT 0,
+        splits TEXT -- Added column to store splits as JSON string
       )
     ''');
 
@@ -565,7 +566,7 @@ class DatabaseHelper {
     return await db.delete('Settings', where: 'key = ?', whereArgs: [key]);
   }
 
-  // Weight Records CRUD operations
+  // --- Weight Records CRUD operations ---
   Future<int> insertWeightRecord(Map<String, dynamic> row) async {
     Database db = await database;
     return await db.insert('Weight_Records', row);
@@ -574,6 +575,19 @@ class DatabaseHelper {
   Future<List<Map<String, dynamic>>> getWeightRecords() async {
     Database db = await database;
     return await db.query('Weight_Records', orderBy: 'date DESC');
+  }
+
+  Future<Map<String, dynamic>?> getWeightRecordById(int id) async {
+    Database db = await database;
+    List<Map<String, dynamic>> results = await db.query(
+      'Weight_Records',
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+    if (results.isNotEmpty) {
+      return results.first;
+    }
+    return null;
   }
 
   Future<int> updateWeightRecord(Map<String, dynamic> row) async {

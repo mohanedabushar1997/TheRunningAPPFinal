@@ -1,10 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
 import '../controllers/tracking_provider.dart';
+import '../models/training_session_model.dart'; // Import TrainingSessionModel
 import '../controllers/voice_coaching_provider.dart';
-import '../controllers/workout_provider.dart'; // Import WorkoutProvider
+import '../controllers/workout_provider.dart';
+import '../controllers/settings_provider.dart'; // Import SettingsProvider
 import '../widgets/primary_button.dart';
-import '../models/workout_model.dart'; // Import WorkoutModel for saving
+import '../models/workout_model.dart';
+import '../widgets/custom_map_marker.dart'; // Import custom marker
 
 class ActiveWorkoutScreen extends StatefulWidget {
   const ActiveWorkoutScreen({super.key});
@@ -14,40 +19,40 @@ class ActiveWorkoutScreen extends StatefulWidget {
 }
 
 class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
-  // bool _isPaused = false; // State is now managed by TrackingProvider
+  final MapController _mapController = MapController(); // Add MapController
 
   @override
   void initState() {
     super.initState();
     // Start tracking when screen loads
+    // Start tracking after the first frame, potentially with training session data
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      // Check for passed arguments
+      final session =
+          ModalRoute.of(context)?.settings.arguments as TrainingSessionModel?;
+
       final trackingProvider = Provider.of<TrackingProvider>(
         context,
         listen: false,
       );
-      // Ensure workout provider is set if needed for saving later
       final workoutProvider = Provider.of<WorkoutProvider>(
         context,
         listen: false,
       );
       trackingProvider.setWorkoutProvider(workoutProvider);
-      trackingProvider.startWorkout(); // Use renamed method
+      // Start workout, passing session if available
+      trackingProvider.startWorkout(trainingSession: session);
     });
   }
 
   @override
   void dispose() {
-    // Clean up if user navigates away without stopping
-    // Check provider state directly instead of local state
-    // final trackingProvider = Provider.of<TrackingProvider>(context, listen: false);
-    // if (trackingProvider.isTracking) {
-    //   trackingProvider.pauseWorkout(); // Use renamed method
-    // }
     // Let WillPopScope handle cleanup via dialogs
+    // _mapController.dispose(); // Consider disposing if necessary
     super.dispose();
   }
 
-  // Helper to format duration (moved from bottom for clarity)
+  // --- Formatting Helpers ---
   String _formatDuration(Duration duration) {
     String twoDigits(int n) => n.toString().padLeft(2, '0');
     final hours = twoDigits(duration.inHours);
@@ -56,35 +61,31 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     return [if (duration.inHours > 0) hours, minutes, seconds].join(':');
   }
 
-  // Helper to format pace (e.g., from seconds/km to MM:SS/km)
   String _formatPace(double? paceInSecondsPerKm) {
     if (paceInSecondsPerKm == null ||
         paceInSecondsPerKm.isNaN ||
         paceInSecondsPerKm.isInfinite ||
-        paceInSecondsPerKm <= 0) {
+        paceInSecondsPerKm <= 0)
       return '-:-- /km';
-    }
     final int minutes = paceInSecondsPerKm ~/ 60;
     final int seconds = (paceInSecondsPerKm % 60).round();
     return '${minutes.toString()}:${seconds.toString().padLeft(2, '0')} /km';
   }
+  // --- End Formatting Helpers ---
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    // Listen to provider changes
     final trackingProvider = Provider.of<TrackingProvider>(context);
     final voiceCoachingProvider = Provider.of<VoiceCoachingProvider>(
       context,
       listen: false,
-    ); // Usually don't need to listen
-
-    // Determine pause state from provider
+    );
+    final settingsProvider = Provider.of<SettingsProvider>(context);
     final bool isPaused = trackingProvider.isPaused;
 
     return WillPopScope(
       onWillPop: () async {
-        // Prevent accidental back navigation during workout
         final shouldPop = await _showExitConfirmationDialog(context);
         return shouldPop ?? false;
       },
@@ -92,55 +93,166 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
         appBar: AppBar(
           title: Text(
             'Active ${trackingProvider.workoutType.toShortString().capitalize()}',
-          ), // Show workout type
-          automaticallyImplyLeading: false, // Disable back button
+          ),
+          automaticallyImplyLeading: false,
           actions: [
             IconButton(
               icon: const Icon(Icons.close),
               tooltip: 'Stop Workout',
-              onPressed:
-                  () => _showStopWorkoutDialog(context), // Use stop dialog
+              onPressed: () => _showStopWorkoutDialog(context),
             ),
           ],
         ),
         body: SafeArea(
           child: Column(
             children: [
-              // Map View (Placeholder)
+              // Map View Implementation with Controls
               Expanded(
                 flex: 2,
-                child: Container(
-                  color: Colors.grey[200],
-                  child: Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
+                child: Stack(
+                  // Use Stack for overlay
+                  children: [
+                    FlutterMap(
+                      mapController: _mapController, // Assign controller
+                      options: MapOptions(
+                        center:
+                            trackingProvider.currentPosition != null
+                                ? LatLng(
+                                  trackingProvider.currentPosition!.latitude,
+                                  trackingProvider.currentPosition!.longitude,
+                                )
+                                : LatLng(51.5, -0.09), // Default location
+                        zoom: 16.0,
+                        // Use onPositionChanged to potentially update map center/zoom if needed elsewhere
+                        // onPositionChanged: (position, hasGesture) {
+                        //   // Update state if needed
+                        // },
+                      ),
                       children: [
-                        Icon(
-                          Icons.map,
-                          size: 64,
-                          color: theme.colorScheme.primary.withOpacity(0.5),
+                        // Tile Layer (Dynamic based on settings)
+                        TileLayer(
+                          urlTemplate: _getMapUrlTemplate(
+                            settingsProvider.mapType,
+                          ),
+                          userAgentPackageName: 'com.fitstride.runningapp',
+                          subdomains: _getSubdomains(settingsProvider.mapType),
                         ),
-                        const SizedBox(height: 16),
-                        Text('Map View', style: theme.textTheme.titleMedium),
-                        const SizedBox(height: 8),
-                        Text(
-                          'Real map implementation would go here',
-                          style: theme.textTheme.bodySmall,
-                        ),
-                        // Display Lat/Lng for debugging
-                        if (trackingProvider.currentPosition != null)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 8.0),
-                            child: Text(
-                              'Lat: ${trackingProvider.currentPosition!.latitude.toStringAsFixed(5)}, Lng: ${trackingProvider.currentPosition!.longitude.toStringAsFixed(5)}',
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                fontSize: 10,
-                              ),
+                        // Polyline Layer (Route Track)
+                        PolylineLayer(
+                          polylines: [
+                            Polyline(
+                              points:
+                                  trackingProvider.routePoints
+                                      .map(
+                                        (p) => LatLng(p.latitude, p.longitude),
+                                      )
+                                      .toList(),
+                              strokeWidth: 4.0,
+                              color: theme.colorScheme.primary,
                             ),
+                          ],
+                        ),
+                        // Marker Layer (Current Location)
+                        if (trackingProvider.currentPosition != null)
+                          MarkerLayer(
+                            markers: [
+                              CustomMapMarker(
+                                point: LatLng(
+                                  trackingProvider.currentPosition!.latitude,
+                                  trackingProvider.currentPosition!.longitude,
+                                ),
+                                type: MarkerType.current,
+                                size: 25,
+                              ),
+                            ],
                           ),
                       ],
                     ),
-                  ),
+                    // Map Controls Overlay
+                    Positioned(
+                      bottom: 10,
+                      right: 10,
+                      child: Column(
+                        children: [
+                          FloatingActionButton.small(
+                            heroTag: 'zoomIn',
+                            tooltip: 'Zoom In',
+                            onPressed: () {
+                              // Use direct zoom property if available, otherwise keep track via onPositionChanged
+                              var currentZoom =
+                                  _mapController.zoom; // Try direct access
+                              _mapController.move(
+                                _mapController.center,
+                                currentZoom + 1,
+                              ); // Use direct access
+                            },
+                            child: const Icon(Icons.add),
+                          ),
+                          const SizedBox(height: 8),
+                          FloatingActionButton.small(
+                            heroTag: 'zoomOut',
+                            tooltip: 'Zoom Out',
+                            onPressed: () {
+                              var currentZoom =
+                                  _mapController.zoom; // Try direct access
+                              _mapController.move(
+                                _mapController.center,
+                                currentZoom - 1,
+                              ); // Use direct access
+                            },
+                            child: const Icon(Icons.remove),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Positioned(
+                      top: 10,
+                      right: 10,
+                      child: Column(
+                        children: [
+                          FloatingActionButton.small(
+                            heroTag: 'centerMap',
+                            tooltip: 'Center on Me',
+                            onPressed: () {
+                              if (trackingProvider.currentPosition != null) {
+                                _mapController.move(
+                                  LatLng(
+                                    trackingProvider.currentPosition!.latitude,
+                                    trackingProvider.currentPosition!.longitude,
+                                  ),
+                                  _mapController.zoom, // Use direct access
+                                );
+                              }
+                            },
+                            child: const Icon(Icons.my_location),
+                          ),
+                          const SizedBox(height: 8),
+                          FloatingActionButton.small(
+                            heroTag: 'cycleMap',
+                            tooltip: 'Change Map Type',
+                            onPressed: () {
+                              final currentType = settingsProvider.mapType;
+                              String nextType;
+                              if (currentType == 'standard')
+                                nextType = 'satellite';
+                              else if (currentType == 'satellite')
+                                nextType = 'terrain';
+                              else
+                                nextType = 'standard';
+                              settingsProvider.setMapType(nextType);
+                            },
+                            child: Icon(
+                              settingsProvider.mapType == 'standard'
+                                  ? Icons.layers
+                                  : settingsProvider.mapType == 'satellite'
+                                  ? Icons.satellite_alt
+                                  : Icons.terrain,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
               ),
 
@@ -155,55 +267,50 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
                       Expanded(
                         child: Row(
                           children: [
-                            // Time
                             _buildMetricCard(
                               context,
                               'Time',
-                              _formatDuration(
-                                trackingProvider.elapsedTime,
-                              ), // Use correct getter
+                              _formatDuration(trackingProvider.elapsedTime),
                               Icons.timer,
                             ),
                             const SizedBox(width: 16),
-                            // Distance
                             _buildMetricCard(
                               context,
                               'Distance',
-                              '${trackingProvider.distance.toStringAsFixed(2)} km', // Use correct getter
+                              '${trackingProvider.distance.toStringAsFixed(2)} km',
                               Icons.straighten,
                             ),
                           ],
                         ),
                       ),
                       const SizedBox(height: 16),
-
                       // Secondary metrics row
                       Expanded(
                         child: Row(
                           children: [
-                            // Pace
                             _buildMetricCard(
                               context,
                               'Pace',
-                              _formatPace(
-                                trackingProvider.currentPace,
-                              ), // Use correct getter and formatter
+                              _formatPace(trackingProvider.currentPace),
                               Icons.speed,
                             ),
                             const SizedBox(width: 16),
-                            // Calories
                             _buildMetricCard(
                               context,
                               'Calories',
-                              '${trackingProvider.caloriesBurned.round()} kcal', // Use correct getter
+                              '${trackingProvider.caloriesBurned.round()} kcal',
                               Icons.local_fire_department,
                             ),
                           ],
                         ),
                       ),
 
+                      // Interval Display (Conditional)
+                      if (trackingProvider.isTrainingPlanWorkout)
+                        _buildIntervalDisplay(context, trackingProvider),
+
                       // Goal progress
-                      if (trackingProvider.hasGoal) // Use correct getter
+                      if (trackingProvider.hasGoal)
                         Padding(
                           padding: const EdgeInsets.only(top: 16.0),
                           child: Column(
@@ -215,9 +322,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
                               ),
                               const SizedBox(height: 8),
                               LinearProgressIndicator(
-                                value:
-                                    trackingProvider
-                                        .goalProgress, // Use correct getter
+                                value: trackingProvider.goalProgress,
                                 backgroundColor: theme.colorScheme.primary
                                     .withOpacity(0.2),
                                 valueColor: AlwaysStoppedAnimation<Color>(
@@ -227,10 +332,9 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
                               ),
                               const SizedBox(height: 4),
                               Text(
-                                trackingProvider
-                                        .hasDistanceGoal // Use correct getter
-                                    ? '${trackingProvider.distance.toStringAsFixed(2)} / ${trackingProvider.distanceGoal?.toStringAsFixed(2) ?? '-'} km' // Use correct getters + null check
-                                    : '${_formatDuration(trackingProvider.elapsedTime)} / ${_formatDuration(trackingProvider.durationGoal ?? Duration.zero)}', // Use correct getters + null check
+                                trackingProvider.hasDistanceGoal
+                                    ? '${trackingProvider.distance.toStringAsFixed(2)} / ${trackingProvider.distanceGoal?.toStringAsFixed(2) ?? '-'} km'
+                                    : '${_formatDuration(trackingProvider.elapsedTime)} / ${_formatDuration(trackingProvider.durationGoal ?? Duration.zero)}',
                                 style: theme.textTheme.bodySmall,
                               ),
                             ],
@@ -243,7 +347,6 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                           children: [
-                            // Pause/Resume button
                             FloatingActionButton(
                               heroTag: 'pauseResume',
                               backgroundColor:
@@ -255,24 +358,15 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
                                 color: Colors.white,
                               ),
                               onPressed: () {
-                                // No need for local state _isPaused anymore
                                 if (isPaused) {
-                                  trackingProvider
-                                      .resumeWorkout(); // Use correct method
-                                  voiceCoachingProvider.playCue(
-                                    'resume',
-                                  ); // Use correct method
+                                  trackingProvider.resumeWorkout();
+                                  voiceCoachingProvider.playCue('resume');
                                 } else {
-                                  trackingProvider
-                                      .pauseWorkout(); // Use correct method
-                                  voiceCoachingProvider.playCue(
-                                    'pause',
-                                  ); // Use correct method
+                                  trackingProvider.pauseWorkout();
+                                  voiceCoachingProvider.playCue('pause');
                                 }
                               },
                             ),
-
-                            // Stop button
                             FloatingActionButton(
                               heroTag: 'stop',
                               backgroundColor: Colors.red,
@@ -282,8 +376,6 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
                               ),
                               onPressed: () => _showStopWorkoutDialog(context),
                             ),
-
-                            // Lock screen button (Placeholder)
                             FloatingActionButton(
                               heroTag: 'lock',
                               backgroundColor: theme.colorScheme.surfaceVariant,
@@ -291,17 +383,17 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
                                 Icons.lock_outline,
                                 color: theme.colorScheme.onSurfaceVariant,
                               ),
-                              onPressed: () {
-                                // TODO: Implement screen lock functionality
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text(
-                                      'Screen lock not implemented yet',
+                              onPressed:
+                                  () => ScaffoldMessenger.of(
+                                    context,
+                                  ).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        'Screen lock not implemented yet',
+                                      ),
+                                      duration: Duration(seconds: 2),
                                     ),
-                                    duration: Duration(seconds: 2),
                                   ),
-                                );
-                              },
                             ),
                           ],
                         ),
@@ -317,6 +409,7 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     );
   }
 
+  // --- Widget Builders ---
   Widget _buildMetricCard(
     BuildContext context,
     String title,
@@ -324,7 +417,6 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     IconData icon,
   ) {
     final theme = Theme.of(context);
-
     return Expanded(
       child: Card(
         elevation: 2,
@@ -349,7 +441,6 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
               ),
               const SizedBox(height: 8),
               FittedBox(
-                // Ensure text fits
                 fit: BoxFit.scaleDown,
                 child: Text(
                   value,
@@ -367,8 +458,47 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     );
   }
 
+  Widget _buildIntervalDisplay(
+    BuildContext context,
+    TrackingProvider trackingProvider,
+  ) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(top: 16.0, bottom: 8.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Text(
+            'Current Interval:',
+            style: theme.textTheme.titleSmall?.copyWith(color: theme.hintColor),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            trackingProvider.currentIntervalDescription ?? 'Training Session',
+            style: theme.textTheme.bodyLarge?.copyWith(
+              fontWeight: FontWeight.bold,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Time Remaining:',
+            style: theme.textTheme.titleSmall?.copyWith(color: theme.hintColor),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            _formatDuration(trackingProvider.remainingIntervalTime),
+            style: theme.textTheme.headlineMedium?.copyWith(
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // --- Dialogs ---
   Future<bool?> _showExitConfirmationDialog(BuildContext context) {
-    // Use listen: false as we are only calling methods
     final trackingProvider = Provider.of<TrackingProvider>(
       context,
       listen: false,
@@ -390,10 +520,8 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
                 child: const Text('EXIT & DISCARD'),
                 style: TextButton.styleFrom(foregroundColor: Colors.red),
                 onPressed: () async {
-                  // Make async
-                  Navigator.of(context).pop(true); // Allow pop
-                  await trackingProvider.discardWorkout(); // Use correct method
-                  // Navigate back to previous screen (likely home or prep)
+                  Navigator.of(context).pop(true);
+                  await trackingProvider.discardWorkout();
                   if (mounted) Navigator.of(context).pop();
                 },
               ),
@@ -403,7 +531,6 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
   }
 
   Future<void> _showStopWorkoutDialog(BuildContext context) {
-    // Use listen: false as we are only calling methods
     final trackingProvider = Provider.of<TrackingProvider>(
       context,
       listen: false,
@@ -425,38 +552,31 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
                 child: const Text('DISCARD'),
                 style: TextButton.styleFrom(foregroundColor: Colors.red),
                 onPressed: () async {
-                  // Make async
-                  Navigator.of(context).pop(); // Close dialog
-                  await trackingProvider.discardWorkout(); // Use correct method
-                  // Navigate back to previous screen
+                  Navigator.of(context).pop();
+                  await trackingProvider.discardWorkout();
                   if (mounted) Navigator.of(context).pop();
                 },
               ),
               TextButton(
                 child: const Text('SAVE & FINISH'),
                 onPressed: () async {
-                  // Make async
-                  Navigator.of(context).pop(); // Close dialog
+                  Navigator.of(context).pop();
                   final savedWorkout =
-                      await trackingProvider
-                          .stopAndSaveWorkout(); // Use correct method
-
+                      await trackingProvider.stopAndSaveWorkout();
                   if (mounted) {
                     if (savedWorkout != null) {
-                      // Navigate to workout summary
                       Navigator.pushReplacementNamed(
                         context,
                         '/workout_summary',
                         arguments: savedWorkout,
                       );
                     } else {
-                      // Handle case where workout wasn't saved (e.g., error in provider)
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(
                           content: Text('Failed to save workout.'),
                         ),
                       );
-                      Navigator.of(context).pop(); // Go back anyway
+                      Navigator.of(context).pop();
                     }
                   }
                 },
@@ -466,15 +586,35 @@ class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
     );
   }
 
-  // Removed duplicate _formatDuration helper
-}
+  // --- Map Type Helpers ---
+  String _getMapUrlTemplate(String mapType) {
+    switch (mapType) {
+      case 'satellite':
+        return 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
+      case 'terrain':
+        return 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png';
+      case 'standard':
+      default:
+        return 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+    }
+  }
+
+  List<String> _getSubdomains(String mapType) {
+    switch (mapType) {
+      case 'terrain':
+        return ['a', 'b', 'c'];
+      default:
+        return [];
+    }
+  }
+
+  // --- End Map Type Helpers ---
+} // End of _ActiveWorkoutScreenState class
 
 // Helper extension needed for capitalize
 extension StringExtension on String {
   String capitalize() {
-    if (this.isEmpty) {
-      return "";
-    }
-    return "${this[0].toUpperCase()}${this.substring(1).toLowerCase()}";
+    if (isEmpty) return "";
+    return "${this[0].toUpperCase()}${substring(1).toLowerCase()}";
   }
 }

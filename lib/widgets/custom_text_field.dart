@@ -11,6 +11,7 @@ class CustomTextField extends StatelessWidget {
   final ValueChanged<String>? onChanged;
   final int? maxLines;
   final FocusNode? focusNode;
+  final TextCapitalization textCapitalization; // Added
 
   const CustomTextField({
     super.key,
@@ -24,6 +25,7 @@ class CustomTextField extends StatelessWidget {
     this.onChanged,
     this.maxLines = 1,
     this.focusNode,
+    this.textCapitalization = TextCapitalization.none, // Added with default
   });
 
   @override
@@ -76,6 +78,7 @@ class CustomTextField extends StatelessWidget {
       ),
       validator: validator, // Integrate validator function
       onChanged: onChanged,
+      textCapitalization: textCapitalization, // Pass down parameter
       // TODO: Add input formatters if needed (e.g., for numbers)
       // inputFormatters: [],
     );

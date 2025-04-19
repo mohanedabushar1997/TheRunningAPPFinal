@@ -368,14 +368,25 @@ class _WorkoutPreparationScreenState extends State<WorkoutPreparationScreen> {
             color: statusColor,
           ),
           const SizedBox(width: 12),
-          Text(
-            gpsStatus,
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: statusColor,
-              fontWeight: FontWeight.bold,
+          Expanded(
+            // Allow text to wrap if needed
+            child: Text(
+              gpsStatus,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: statusColor,
+                fontWeight: FontWeight.bold,
+              ),
             ),
           ),
-          // Optionally add accuracy info: Text(' Accuracy: ${trackingProvider.currentPosition?.accuracy.toStringAsFixed(1)}m')
+          // Show accuracy when available
+          if (gpsReady && trackingProvider.currentPosition?.accuracy != null)
+            Padding(
+              padding: const EdgeInsets.only(left: 8.0),
+              child: Text(
+                '(${trackingProvider.currentPosition!.accuracy.toStringAsFixed(0)}m acc.)',
+                style: theme.textTheme.bodySmall?.copyWith(color: statusColor),
+              ),
+            ),
         ],
       ),
     );

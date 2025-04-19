@@ -6,7 +6,9 @@ import '../models/workout_model.dart';
 import '../models/user_model.dart';
 import '../services/location_service.dart';
 import '../services/calculation_service.dart';
-import 'workout_provider.dart'; // Import WorkoutProvider to save
+import '../models/training_session_model.dart'; // Import TrainingSessionModel
+import 'workout_provider.dart';
+import 'settings_provider.dart'; // Import SettingsProvider
 
 enum TrackingState { idle, tracking, paused }
 
@@ -14,6 +16,7 @@ class TrackingProvider with ChangeNotifier {
   // Inject LocationService and CalculationService
   final LocationService _locationService;
   final CalculationService _calculationService;
+  final SettingsProvider _settingsProvider; // Add SettingsProvider
   final UserModel? _user;
   // Inject WorkoutProvider for saving
   WorkoutProvider? _workoutProvider;
@@ -33,10 +36,18 @@ class TrackingProvider with ChangeNotifier {
   double _elevationLoss = 0.0;
   Position? _lastPosition;
   WorkoutType _workoutType = WorkoutType.run;
+  TrainingSessionModel? _currentTrainingSession; // Added
+  String? _currentIntervalDescription; // Added
+  Duration _remainingIntervalTime = Duration.zero; // Added
 
   // Goal data
   double? _targetDistance; // in km
   Duration? _targetDuration;
+
+  // Split tracking data
+  List<Duration> _splits = []; // Added
+  double _distanceAtLastSplit = 0.0; // Added
+  Duration _timeAtLastSplit = Duration.zero; // Added
 
   // --- Getters for UI ---
   Position? get currentPosition => _currentPosition;
@@ -51,10 +62,16 @@ class TrackingProvider with ChangeNotifier {
   WorkoutType get workoutType => _workoutType;
   double? get distanceGoal => _targetDistance; // Renamed for UI
   Duration? get durationGoal => _targetDuration; // Renamed for UI
+  String? get currentIntervalDescription =>
+      _currentIntervalDescription; // Added
+  Duration get remainingIntervalTime => _remainingIntervalTime; // Added
+  bool get isTrainingPlanWorkout =>
+      _currentTrainingSession != null; // Added helper
 
   bool get isTracking => _state == TrackingState.tracking;
   bool get isPaused => _state == TrackingState.paused;
   bool get isIdle => _state == TrackingState.idle;
+  List<Duration> get splits => _splits; // Added getter
 
   bool get hasGoal => _targetDistance != null || _targetDuration != null;
   bool get hasDistanceGoal => _targetDistance != null;
@@ -80,10 +97,12 @@ class TrackingProvider with ChangeNotifier {
   TrackingProvider({
     required LocationService locationService,
     required CalculationService calculationService,
+    required SettingsProvider settingsProvider, // Require SettingsProvider
     UserModel? user,
     // WorkoutProvider is optional here, can be set later
   }) : _locationService = locationService,
        _calculationService = calculationService,
+       _settingsProvider = settingsProvider, // Store SettingsProvider
        _user = user;
 
   // Method to set WorkoutProvider after initialization (if needed)
@@ -120,17 +139,51 @@ class TrackingProvider with ChangeNotifier {
   }
   // --- End Goal Setting Methods ---
 
+  // Method called by ChangeNotifierProxyProvider when SettingsProvider updates
+  void updateSettings(SettingsProvider newSettings) {
+    // Check if accuracy setting changed and update LocationService if needed
+    // Note: We might need to store the previous accuracy to compare,
+    // or simply re-apply the setting every time. Re-applying is simpler.
+    print("TrackingProvider received settings update. Applying GPS accuracy.");
+    _locationService.setAccuracy(
+      newSettings.gpsAccuracy.toGeolocatorAccuracy(),
+    );
+    // No need to notifyListeners here unless a UI element depends on this directly
+  }
+
   // --- Renamed Tracking Control Methods for UI ---
-  Future<void> startWorkout() async {
-    // Renamed from startTracking
+  // Modify startWorkout to accept optional training session
+  Future<void> startWorkout({TrainingSessionModel? trainingSession}) async {
     if (_state != TrackingState.idle) return;
 
     _state = TrackingState.tracking;
-    _resetTrackingData(); // Resets goals as well
+    _resetTrackingData();
+    _currentTrainingSession = trainingSession; // Store the session
+
+    // Initialize interval display if session provided
+    if (_currentTrainingSession != null) {
+      // For now, just show the first description and target duration as the 'interval'
+      _currentIntervalDescription =
+          _currentTrainingSession!.description ?? 'Training Session';
+      _remainingIntervalTime =
+          _currentTrainingSession!.targetDuration ?? Duration.zero;
+      print(
+        "Starting training session: ${_currentIntervalDescription}, Duration: $_remainingIntervalTime",
+      );
+    } else {
+      _currentIntervalDescription = null;
+      _remainingIntervalTime = Duration.zero;
+    }
+
     _startTimer();
 
     // Initialize location service
     try {
+      // Apply accuracy setting BEFORE starting tracking
+      _locationService.setAccuracy(
+        _settingsProvider.gpsAccuracy.toGeolocatorAccuracy(),
+      );
+
       await _locationService.initialize();
       await _locationService.startTracking();
 
@@ -256,6 +309,12 @@ class TrackingProvider with ChangeNotifier {
     _maxSpeed = 0.0;
     _elevationGain = 0.0;
     _elevationLoss = 0.0;
+    _currentTrainingSession = null; // Reset training session
+    _currentIntervalDescription = null; // Reset interval display
+    _remainingIntervalTime = Duration.zero; // Reset interval time
+    _splits = []; // Reset splits
+    _distanceAtLastSplit = 0.0; // Reset split tracking
+    _timeAtLastSplit = Duration.zero; // Reset split tracking
     // Do not reset _workoutType here, it's set before starting
     // Reset goals? Or keep them until explicitly cleared? Let's keep them for now.
     // _targetDistance = null;
@@ -272,6 +331,17 @@ class TrackingProvider with ChangeNotifier {
 
         // Update calories every second based on duration
         _updateCalories();
+
+        // Decrement interval timer if applicable
+        if (_currentTrainingSession != null &&
+            _remainingIntervalTime > Duration.zero) {
+          _remainingIntervalTime -= const Duration(seconds: 1);
+          if (_remainingIntervalTime < Duration.zero) {
+            _remainingIntervalTime = Duration.zero;
+            // TODO: Implement logic to advance to the next interval step here
+            print("Interval time reached zero.");
+          }
+        }
 
         // Check if duration goal met
         if (_targetDuration != null && _currentDuration >= _targetDuration!) {
@@ -293,8 +363,12 @@ class TrackingProvider with ChangeNotifier {
 
   // Update metrics based on new position data
   void _updateMetrics(Position newPosition) {
-    // Ignore inaccurate points? (Optional based on settings)
-    // if (newPosition.accuracy > 50) return;
+    // Filter out points with poor accuracy (e.g., > 50 meters)
+    // TODO: Make this threshold configurable via SettingsProvider?
+    if (newPosition.accuracy > 50.0) {
+      print('Discarding inaccurate point. Accuracy: ${newPosition.accuracy}');
+      return; // Ignore this point
+    }
 
     _currentPosition = newPosition;
 
@@ -368,6 +442,9 @@ class TrackingProvider with ChangeNotifier {
         // Maybe set a flag? _distanceGoalMet = true;
       }
 
+      // Check for splits after updating distance/duration
+      _checkAndRecordSplit();
+
       notifyListeners();
     } else {
       // Even if distance didn't change significantly, update position for map?
@@ -392,6 +469,33 @@ class TrackingProvider with ChangeNotifier {
       // avgSpeedKmh: _calculationService.calculateSpeedFromPace(_currentPace),
     );
   }
+
+  // --- Split Logic ---
+  void _checkAndRecordSplit() {
+    // Determine the unit distance based on settings (default to km)
+    // TODO: Get unit preference from SettingsProvider
+    final bool useImperial = _settingsProvider.units == 'imperial';
+    final double unitDistance = useImperial ? 1.60934 : 1.0; // 1 mile or 1 km
+
+    // Check if the current distance has crossed the next split threshold
+    if (_currentDistance >= _distanceAtLastSplit + unitDistance) {
+      // Calculate the time for this split
+      final Duration splitTime = _currentDuration - _timeAtLastSplit;
+      _splits.add(splitTime);
+
+      // Update tracking variables for the next split
+      // Find the exact distance marker (e.g., 1km, 2km, 3km...)
+      _distanceAtLastSplit =
+          (_currentDistance / unitDistance).floor() * unitDistance;
+      _timeAtLastSplit = _currentDuration; // Record time at this split point
+
+      print("Split ${_splits.length} recorded: ${splitTime.inSeconds}s");
+      // Optionally trigger a voice cue for the split
+      // voiceCoachingProvider.playCue('split', data: {'number': _splits.length, 'time': splitTime});
+      notifyListeners(); // Notify UI about the new split
+    }
+  }
+  // --- End Split Logic ---
 
   // Add a manual location point (for testing or manual entry)
   void addManualPoint(
@@ -422,5 +526,25 @@ class TrackingProvider with ChangeNotifier {
     _positionStreamSubscription?.cancel();
     _locationService.dispose();
     super.dispose();
+  }
+}
+
+// Helper extension to convert enum (if needed, depends on LocationService implementation)
+// Assuming LocationService uses geolocator's LocationAccuracy directly now.
+// If LocationService uses its own enum, this mapping is needed.
+extension LocationAccuracyLevelMapping on LocationAccuracyLevel {
+  LocationAccuracy toGeolocatorAccuracy() {
+    switch (this) {
+      case LocationAccuracyLevel.low:
+        return LocationAccuracy.low;
+      case LocationAccuracyLevel.medium:
+        return LocationAccuracy.medium;
+      case LocationAccuracyLevel.high:
+        return LocationAccuracy.high;
+      case LocationAccuracyLevel.best:
+        return LocationAccuracy.best;
+      default:
+        return LocationAccuracy.high; // Default fallback
+    }
   }
 }

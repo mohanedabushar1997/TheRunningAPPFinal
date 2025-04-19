@@ -1,11 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
 import '../controllers/workout_provider.dart';
 import '../controllers/achievements_provider.dart';
+import '../controllers/settings_provider.dart'; // Import SettingsProvider
 import '../models/workout_model.dart';
-import '../models/achievement_model.dart'; // Import AchievementModel
+import '../models/achievement_model.dart';
 import '../widgets/primary_button.dart';
-import 'package:intl/intl.dart'; // For date formatting
+import 'package:intl/intl.dart';
+import '../widgets/custom_map_marker.dart';
+import '../models/workout_point_model.dart';
+import '../widgets/custom_line_chart.dart';
+import 'package:fl_chart/fl_chart.dart';
 
 class WorkoutSummaryScreen extends StatefulWidget {
   final WorkoutModel workout;
@@ -19,17 +26,13 @@ class WorkoutSummaryScreen extends StatefulWidget {
 class _WorkoutSummaryScreenState extends State<WorkoutSummaryScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
-  List<AchievementModel> _newlyUnlockedAchievements =
-      []; // Store AchievementModel
-  bool _isMapLoaded = false;
+  List<AchievementModel> _newlyUnlockedAchievements = [];
   bool _isLoadingAchievements = true;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
-
-    // Check for achievements unlocked by this workout
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkAchievements();
     });
@@ -42,12 +45,10 @@ class _WorkoutSummaryScreenState extends State<WorkoutSummaryScreen>
         context,
         listen: false,
       );
-      // Call the correct async method and await its result
       final unlocked = await achievementsProvider.checkAndUnlockAchievements(
         workout: widget.workout,
       );
       if (mounted) {
-        // Check if the widget is still in the tree
         setState(() {
           _newlyUnlockedAchievements = unlocked;
           _isLoadingAchievements = false;
@@ -57,7 +58,6 @@ class _WorkoutSummaryScreenState extends State<WorkoutSummaryScreen>
       print("Error checking achievements: $e");
       if (mounted) {
         setState(() => _isLoadingAchievements = false);
-        // Optionally show an error message
       }
     }
   }
@@ -68,7 +68,7 @@ class _WorkoutSummaryScreenState extends State<WorkoutSummaryScreen>
     super.dispose();
   }
 
-  // Helper to format duration
+  // --- Formatting Helpers ---
   String _formatDuration(Duration duration) {
     String twoDigits(int n) => n.toString().padLeft(2, '0');
     final hours = twoDigits(duration.inHours);
@@ -77,36 +77,26 @@ class _WorkoutSummaryScreenState extends State<WorkoutSummaryScreen>
     return [if (duration.inHours > 0) hours, minutes, seconds].join(':');
   }
 
-  // Helper to format pace
   String _formatPace(double? paceInSecondsPerKm) {
     if (paceInSecondsPerKm == null ||
         paceInSecondsPerKm.isNaN ||
         paceInSecondsPerKm.isInfinite ||
-        paceInSecondsPerKm <= 0) {
+        paceInSecondsPerKm <= 0)
       return '-:-- /km';
-    }
     final int minutes = paceInSecondsPerKm ~/ 60;
     final int seconds = (paceInSecondsPerKm % 60).round();
     return '${minutes.toString()}:${seconds.toString().padLeft(2, '0')} /km';
   }
 
-  // Helper to format date
-  String _formatDate(DateTime date) {
-    return DateFormat('MMM d, yyyy').format(date); // Example format
-  }
-
-  // Helper to format time
-  String _formatTime(DateTime date) {
-    return DateFormat('h:mm a').format(date); // Example format
-  }
+  String _formatDate(DateTime date) => DateFormat('MMM d, yyyy').format(date);
+  String _formatTime(DateTime date) => DateFormat('h:mm a').format(date);
+  // --- End Formatting Helpers ---
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-
     return WillPopScope(
       onWillPop: () async {
-        // Navigate to home instead of previous screen
         Navigator.of(context).popUntil((route) => route.isFirst);
         return false;
       },
@@ -131,13 +121,8 @@ class _WorkoutSummaryScreenState extends State<WorkoutSummaryScreen>
         body: TabBarView(
           controller: _tabController,
           children: [
-            // SUMMARY TAB
             _buildSummaryTab(context),
-
-            // DETAILS TAB
             _buildDetailsTab(context),
-
-            // MAP TAB
             _buildMapTab(context),
           ],
         ),
@@ -145,11 +130,10 @@ class _WorkoutSummaryScreenState extends State<WorkoutSummaryScreen>
           child: Padding(
             padding: const EdgeInsets.all(16.0),
             child: PrimaryButton(
-              text: 'DONE', // Changed text
-              onPressed: () {
-                // Navigate to home
-                Navigator.of(context).popUntil((route) => route.isFirst);
-              },
+              text: 'DONE',
+              onPressed:
+                  () =>
+                      Navigator.of(context).popUntil((route) => route.isFirst),
             ),
           ),
         ),
@@ -157,6 +141,7 @@ class _WorkoutSummaryScreenState extends State<WorkoutSummaryScreen>
     );
   }
 
+  // --- Tab Builders ---
   Widget _buildSummaryTab(BuildContext context) {
     final theme = Theme.of(context);
     final workout = widget.workout;
@@ -213,14 +198,12 @@ class _WorkoutSummaryScreenState extends State<WorkoutSummaryScreen>
             ),
           ),
           const SizedBox(height: 24),
-
           // Main metrics
           Row(
             children: [
               _buildMetricCard(
                 context,
                 'Distance',
-                // Add null check
                 '${workout.distance?.toStringAsFixed(2) ?? '0.00'} km',
                 Icons.straighten,
               ),
@@ -228,7 +211,6 @@ class _WorkoutSummaryScreenState extends State<WorkoutSummaryScreen>
               _buildMetricCard(
                 context,
                 'Duration',
-                // Pass seconds to helper
                 _formatDuration(workout.duration),
                 Icons.timer,
               ),
@@ -240,7 +222,6 @@ class _WorkoutSummaryScreenState extends State<WorkoutSummaryScreen>
               _buildMetricCard(
                 context,
                 'Avg. Pace',
-                // Use correct property and formatter
                 _formatPace(workout.avgPace),
                 Icons.speed,
               ),
@@ -248,14 +229,12 @@ class _WorkoutSummaryScreenState extends State<WorkoutSummaryScreen>
               _buildMetricCard(
                 context,
                 'Calories',
-                // Add null check
                 '${workout.calories?.round() ?? 0} kcal',
                 Icons.local_fire_department,
               ),
             ],
           ),
           const SizedBox(height: 24),
-
           // Achievements unlocked
           if (_isLoadingAchievements)
             const Center(
@@ -289,32 +268,21 @@ class _WorkoutSummaryScreenState extends State<WorkoutSummaryScreen>
                       backgroundColor: theme.colorScheme.secondary.withOpacity(
                         0.2,
                       ),
-                      // TODO: Use achievement.icon if it's an IconData or load image
                       child: Icon(
                         Icons.emoji_events,
                         color: theme.colorScheme.secondary,
                       ),
                     ),
-                    title: Text(achievement.name), // Use name from model
+                    title: Text(achievement.name),
                     subtitle: Text(
                       achievement.description ?? 'New achievement!',
-                    ), // Use description
+                    ),
                   );
                 },
               ),
             ),
             const SizedBox(height: 24),
           ],
-
-          // Personal records (Placeholder - requires logic)
-          // Text(
-          //   'Personal Records',
-          //   style: theme.textTheme.titleMedium?.copyWith(
-          //     fontWeight: FontWeight.bold,
-          //   ),
-          // ),
-          // const SizedBox(height: 8),
-          // Card( ... PR display ... ),
         ],
       ),
     );
@@ -323,16 +291,13 @@ class _WorkoutSummaryScreenState extends State<WorkoutSummaryScreen>
   Widget _buildDetailsTab(BuildContext context) {
     final theme = Theme.of(context);
     final workout = widget.workout;
-
-    // TODO: Calculate actual splits from workout.routePoints
-    final splits = [
-      // Sample data
-      {'km': 1, 'pace': '5:30', 'elevation': '+12m'},
-      {'km': 2, 'pace': '5:42', 'elevation': '+8m'},
-      {'km': 3, 'pace': '5:38', 'elevation': '-5m'},
-      {'km': 4, 'pace': '5:45', 'elevation': '+3m'},
-      {'km': 5, 'pace': '5:35', 'elevation': '-10m'},
-    ];
+    final settingsProvider = Provider.of<SettingsProvider>(
+      context,
+      listen: false,
+    ); // Get settings
+    final bool useImperial = settingsProvider.units == 'imperial';
+    final String unitLabel = useImperial ? 'MILE' : 'KM';
+    final List<Duration>? splits = workout.splits; // Get actual splits
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16.0),
@@ -357,7 +322,6 @@ class _WorkoutSummaryScreenState extends State<WorkoutSummaryScreen>
                     ),
                   ),
                   const SizedBox(height: 16),
-                  // Use WorkoutTypeExtension to convert enum to string
                   _buildInfoRow(
                     context,
                     'Type',
@@ -365,31 +329,26 @@ class _WorkoutSummaryScreenState extends State<WorkoutSummaryScreen>
                   ),
                   _buildInfoRow(context, 'Date', _formatDate(workout.date)),
                   _buildInfoRow(context, 'Time', _formatTime(workout.date)),
-                  // Pass seconds to helper
                   _buildInfoRow(
                     context,
                     'Duration',
                     _formatDuration(workout.duration),
                   ),
-                  // Add null check
                   _buildInfoRow(
                     context,
                     'Distance',
                     '${workout.distance?.toStringAsFixed(2) ?? '-.--'} km',
                   ),
-                  // Use correct property and formatter
                   _buildInfoRow(
                     context,
                     'Avg. Pace',
                     _formatPace(workout.avgPace),
                   ),
-                  // Add null check
                   _buildInfoRow(
                     context,
                     'Calories',
                     '${workout.calories?.round() ?? 0} kcal',
                   ),
-                  // Add null check and formatting
                   _buildInfoRow(
                     context,
                     'Elevation Gain',
@@ -412,92 +371,104 @@ class _WorkoutSummaryScreenState extends State<WorkoutSummaryScreen>
             ),
           ),
           const SizedBox(height: 24),
-
-          // Splits (Placeholder - requires calculation)
+          // Splits
           Text(
-            'Splits (Placeholder)',
+            'Splits', // Updated title
             style: theme.textTheme.titleMedium?.copyWith(
               fontWeight: FontWeight.bold,
             ),
           ),
           const SizedBox(height: 8),
-          Card(
-            elevation: 1,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Column(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        flex: 2,
-                        child: Text('KM', style: theme.textTheme.titleSmall),
-                      ),
-                      Expanded(
-                        flex: 3,
-                        child: Text('PACE', style: theme.textTheme.titleSmall),
-                      ),
-                      Expanded(
-                        flex: 3,
-                        child: Text(
-                          'ELEVATION',
-                          style: theme.textTheme.titleSmall,
-                        ),
-                      ),
-                    ],
-                  ),
+          // Display splits or 'No data' message
+          (splits == null || splits.isEmpty)
+              ? Card(
+                elevation: 1,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
                 ),
-                const Divider(height: 1),
-                ListView.separated(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  itemCount: splits.length,
-                  separatorBuilder:
-                      (context, index) => const Divider(height: 1),
-                  itemBuilder: (context, index) {
-                    final split = splits[index];
-                    return Padding(
-                      padding: const EdgeInsets.all(16.0),
+                child: const Padding(
+                  padding: EdgeInsets.all(16.0),
+                  child: Center(child: Text('No split data recorded.')),
+                ),
+              )
+              : Card(
+                elevation: 1,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Column(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16.0,
+                        vertical: 12.0,
+                      ),
                       child: Row(
                         children: [
                           Expanded(
                             flex: 2,
                             child: Text(
-                              '${split['km']}',
-                              style: theme.textTheme.bodyMedium,
+                              unitLabel,
+                              style: theme.textTheme.titleSmall,
                             ),
                           ),
                           Expanded(
                             flex: 3,
                             child: Text(
-                              '${split['pace']}',
-                              style: theme.textTheme.bodyMedium?.copyWith(
-                                fontWeight: FontWeight.bold,
-                              ),
+                              'TIME',
+                              style: theme.textTheme.titleSmall,
                             ),
                           ),
-                          Expanded(
-                            flex: 3,
-                            child: Text(
-                              '${split['elevation']}',
-                              style: theme.textTheme.bodyMedium,
-                            ),
-                          ),
+                          // Removed Elevation column header
                         ],
                       ),
-                    );
-                  },
+                    ),
+                    const Divider(height: 1),
+                    ListView.separated(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      itemCount: splits.length,
+                      separatorBuilder:
+                          (context, index) => const Divider(height: 1),
+                      itemBuilder: (context, index) {
+                        final splitDuration = splits[index];
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16.0,
+                            vertical: 12.0,
+                          ),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                flex: 2,
+                                child: Text(
+                                  '${index + 1}', // Split number
+                                  style: theme.textTheme.bodyMedium,
+                                ),
+                              ),
+                              Expanded(
+                                flex: 3,
+                                child: Text(
+                                  _formatDuration(
+                                    splitDuration,
+                                  ), // Formatted split time
+                                  style: theme.textTheme.bodyMedium?.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                              // Removed Elevation data display
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                  ],
                 ),
-              ],
-            ),
-          ),
-
-          // Heart rate chart would go here (Placeholder)
-          // const SizedBox(height: 24),
-          // Text( ... ), Card( ... ),
+              ), // End of Card for splits list
+          const SizedBox(height: 24),
+          // Elevation Profile Chart
+          _buildElevationChart(context),
           const SizedBox(height: 24),
         ],
       ),
@@ -506,35 +477,78 @@ class _WorkoutSummaryScreenState extends State<WorkoutSummaryScreen>
 
   Widget _buildMapTab(BuildContext context) {
     final theme = Theme.of(context);
-    // TODO: Implement actual map view using flutter_map and workout.routePoints
+    final workout = widget.workout;
+    // Access settings provider
+    final settingsProvider = Provider.of<SettingsProvider>(
+      context,
+      listen: false,
+    );
+    final List<WorkoutPointModel> routePoints = workout.routePoints ?? [];
+    final List<LatLng> latLngPoints =
+        routePoints.map((p) => LatLng(p.latitude, p.longitude)).toList();
 
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            Icons.map,
-            size: 64,
-            color: theme.colorScheme.primary.withOpacity(0.5),
-          ),
-          const SizedBox(height: 16),
-          Text('Route Map', style: theme.textTheme.titleMedium),
-          const SizedBox(height: 8),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 32.0),
-            child: Text(
-              'Map implementation using workout route points would go here.',
-              style: theme.textTheme.bodyMedium,
-              textAlign: TextAlign.center,
+    if (latLngPoints.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.map_outlined, size: 64, color: theme.disabledColor),
+            const SizedBox(height: 16),
+            Text('No Route Data Available', style: theme.textTheme.titleMedium),
+          ],
+        ),
+      );
+    }
+
+    final bounds = LatLngBounds.fromPoints(latLngPoints);
+    final center = bounds.center;
+    double zoom = 14.0;
+    double distance = const Distance().distance(
+      bounds.northEast,
+      bounds.southWest,
+    );
+    if (distance > 0) {
+      zoom = 15 - (distance / 20000);
+      if (zoom < 10) zoom = 10;
+      if (zoom > 18) zoom = 18;
+    }
+
+    return FlutterMap(
+      options: MapOptions(center: center, zoom: zoom),
+      children: [
+        TileLayer(
+          urlTemplate: _getMapUrlTemplate(
+            settingsProvider.mapType,
+          ), // Use helper
+          userAgentPackageName: 'com.fitstride.runningapp',
+          subdomains: _getSubdomains(settingsProvider.mapType), // Use helper
+        ),
+        PolylineLayer(
+          polylines: [
+            Polyline(
+              points: latLngPoints,
+              strokeWidth: 4.0,
+              color: theme.colorScheme.primary,
             ),
-          ),
-          // const SizedBox(height: 24),
-          // OutlinedButton.icon( ... Load Map Button ... ),
-        ],
-      ),
+          ],
+        ),
+        MarkerLayer(
+          markers: [
+            if (latLngPoints.isNotEmpty)
+              CustomMapMarker(
+                point: latLngPoints.first,
+                type: MarkerType.start,
+              ),
+            if (latLngPoints.length > 1)
+              CustomMapMarker(point: latLngPoints.last, type: MarkerType.end),
+          ],
+        ),
+      ],
     );
   }
+  // --- End Tab Builders ---
 
+  // --- Widget Builders ---
   Widget _buildMetricCard(
     BuildContext context,
     String title,
@@ -542,7 +556,6 @@ class _WorkoutSummaryScreenState extends State<WorkoutSummaryScreen>
     IconData icon,
   ) {
     final theme = Theme.of(context);
-
     return Expanded(
       child: Card(
         elevation: 2,
@@ -567,7 +580,6 @@ class _WorkoutSummaryScreenState extends State<WorkoutSummaryScreen>
               ),
               const SizedBox(height: 8),
               FittedBox(
-                // Ensure text fits
                 fit: BoxFit.scaleDown,
                 child: Text(
                   value,
@@ -606,14 +618,140 @@ class _WorkoutSummaryScreenState extends State<WorkoutSummaryScreen>
       ),
     );
   }
-}
+
+  Widget _buildElevationChart(BuildContext context) {
+    final theme = Theme.of(context);
+    final workout = widget.workout;
+    final List<WorkoutPointModel> points = workout.routePoints ?? [];
+    if (points.length < 2) return const SizedBox.shrink();
+
+    List<FlSpot> spots = [];
+    double cumulativeDistance = 0.0;
+    double minElevation = double.maxFinite;
+    double maxElevation = double.minPositive;
+
+    for (int i = 0; i < points.length; i++) {
+      final point = points[i];
+      if (point.elevation != null) {
+        if (point.elevation! < minElevation) minElevation = point.elevation!;
+        if (point.elevation! > maxElevation) maxElevation = point.elevation!;
+      }
+      if (i > 0) {
+        cumulativeDistance +=
+            const Distance().distance(
+              LatLng(points[i - 1].latitude, points[i - 1].longitude),
+              LatLng(point.latitude, point.longitude),
+            ) /
+            1000.0;
+      }
+      if (point.elevation != null)
+        spots.add(FlSpot(cumulativeDistance, point.elevation!));
+    }
+
+    final elevationRange = maxElevation - minElevation;
+    minElevation -= elevationRange * 0.1;
+    maxElevation += elevationRange * 0.1;
+    if (minElevation == maxElevation) {
+      minElevation -= 5;
+      maxElevation += 5;
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Elevation Profile',
+          style: theme.textTheme.titleMedium?.copyWith(
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        const SizedBox(height: 8),
+        CustomLineChart(
+          spots: spots,
+          minY: minElevation,
+          maxY: maxElevation,
+          showDots: false,
+          leftTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              reservedSize: 40,
+              interval: (maxElevation - minElevation) / 4,
+              getTitlesWidget: (value, meta) {
+                final interval = (meta.max - meta.min) / 4;
+                if (value == meta.min ||
+                    value == meta.max ||
+                    (interval > 0 && (value - meta.min) % interval < 1e-6)) {
+                  return SideTitleWidget(
+                    axisSide: meta.axisSide,
+                    space: 8.0,
+                    child: Text(
+                      '${value.toStringAsFixed(0)}m',
+                      style: theme.textTheme.bodySmall,
+                    ),
+                  );
+                }
+                return const SizedBox.shrink();
+              },
+            ),
+          ),
+          bottomTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              reservedSize: 30,
+              interval: (spots.last.x - spots.first.x) / 4,
+              getTitlesWidget: (value, meta) {
+                final interval = (meta.max - meta.min) / 4;
+                if (value == meta.min ||
+                    value == meta.max ||
+                    (interval > 0 && (value - meta.min) % interval < 1e-6)) {
+                  return SideTitleWidget(
+                    axisSide: meta.axisSide,
+                    space: 8.0,
+                    child: Text(
+                      '${value.toStringAsFixed(1)}km',
+                      style: theme.textTheme.bodySmall,
+                    ),
+                  );
+                }
+                return const SizedBox.shrink();
+              },
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+  // --- End Widget Builders ---
+
+  // --- Map Type Helpers ---
+  String _getMapUrlTemplate(String mapType) {
+    switch (mapType) {
+      case 'satellite':
+        return 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
+      case 'terrain':
+        return 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png';
+      case 'standard':
+      default:
+        return 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+    }
+  }
+
+  List<String> _getSubdomains(String mapType) {
+    switch (mapType) {
+      case 'terrain':
+        return ['a', 'b', 'c'];
+      default:
+        return [];
+    }
+  }
+
+  // --- End Map Type Helpers ---
+} // End of _WorkoutSummaryScreenState class
 
 // Helper extension needed for capitalize
 extension StringExtension on String {
   String capitalize() {
-    if (this.isEmpty) {
-      return "";
-    }
-    return "${this[0].toUpperCase()}${this.substring(1).toLowerCase()}";
+    if (isEmpty) return "";
+    return "${this[0].toUpperCase()}${substring(1).toLowerCase()}";
   }
 }

@@ -1,11 +1,13 @@
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
-import '../data/database_helper.dart';
+// import '../data/database_helper.dart'; // No longer needed directly
 import '../models/user_model.dart'; // Import UserModel
+import '../services/storage_service.dart'; // Import StorageService
 
 class UserProvider with ChangeNotifier {
-  final DatabaseHelper _dbHelper = DatabaseHelper();
+  // final DatabaseHelper _dbHelper = DatabaseHelper(); // Replaced by StorageService
+  final StorageService _storageService = StorageService(); // Use StorageService
   final Uuid _uuid = const Uuid();
   SharedPreferences? _prefs;
 
@@ -55,7 +57,8 @@ class UserProvider with ChangeNotifier {
       return;
     }
     print("Loading profile for device ID: $_deviceId");
-    Map<String, dynamic>? userDataMap = await _dbHelper.getUserByDeviceId(
+    // Use StorageService
+    Map<String, dynamic>? userDataMap = await _storageService.getUserByDeviceId(
       _deviceId!,
     );
     if (userDataMap != null) {
@@ -89,16 +92,14 @@ class UserProvider with ChangeNotifier {
     // Convert UserModel to Map for database operation
     Map<String, dynamic> userMap = userProfile.toMap();
 
-    // TODO: Use StorageService instead of direct dbHelper access?
-    final existingUserMap = await _dbHelper.getUserByDeviceId(_deviceId!);
-    if (existingUserMap != null) {
-      // Ensure the ID from the loaded user is used for the update, if necessary
-      // userMap['id'] = existingUserMap['id']; // Uncomment if dbHelper.updateUser requires ID
-      await _dbHelper.updateUser(userMap);
-      print("Updated user profile for device ID: $_deviceId");
-    } else {
-      await _dbHelper.insertUser(userMap);
-      print("Created new user profile for device ID: $_deviceId");
+    // Use StorageService's saveUser method which handles insert/update logic
+    try {
+      await _storageService.saveUser(userProfile);
+      print("Saved/Updated user profile for device ID: $_deviceId");
+    } catch (e) {
+      print("Error saving user profile via StorageService: $e");
+      // Handle error appropriately (e.g., show message to user)
+      return; // Don't update local state if save failed
     }
 
     _currentUser =
@@ -112,8 +113,8 @@ class UserProvider with ChangeNotifier {
       print("Cannot delete profile, device ID is null.");
       return;
     }
-    // TODO: Use StorageService?
-    await _dbHelper.deleteUser(_deviceId!);
+    // Use StorageService
+    await _storageService.deleteUser(_deviceId!);
     _currentUser = null; // Clear local state
     print("Deleted user profile for device ID: $_deviceId");
     // Optionally, delete the device ID itself from SharedPreferences?

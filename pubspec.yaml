@@ -48,6 +48,10 @@ dependencies:
   flutter_local_notifications: ^17.0.0 # For local notifications
   sqlcipher_flutter_libs: ^0.6.5 # For database encryption
   flutter_secure_storage: ^9.0.0 # For secure key storage
+  google_fonts: ^4.0.4 # For custom fonts in themes (Downgraded for http compatibility)
+  table_calendar: ^3.1.2 # For history screen calendar view
+  csv: ^6.0.0 # Added for parsing predefined workouts CSV
+  audio_session: ^0.1.18 # Added for audio focus management
 
 dev_dependencies:
   flutter_test:
@@ -59,6 +63,8 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^5.0.0
+  flutter_launcher_icons: ^0.13.1
+  flutter_native_splash: ^2.4.0
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
@@ -76,6 +82,17 @@ flutter:
     - assets/images/
     - assets/audio/
     - assets/fonts/
+    - assets/data/predifined_workouts.csv # Added CSV asset
+
+flutter_launcher_icons:
+  android: "launcher_icon"
+  ios: true
+  image_path: "assets/images/foreground icon.png"
+  min_sdk_android: 21 # android min sdk min:16, default 21
+  remove_alpha_ios: true
+  # Optionally configure adaptive icons for Android
+  # adaptive_icon_background: "#ffffff" # Or your desired background color
+  # adaptive_icon_foreground: "assets/images/foreground icon.png" # Use the same icon for foreground
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images
@@ -107,3 +124,23 @@ flutter:
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
+
+flutter_native_splash:
+  color: "#FFFFFF" # Light theme background
+  image: assets/images/foreground icon.png
+  # Optional: Specify separate dark mode settings if needed
+  # color_dark: "#333333" # Example dark theme background
+  # image_dark: assets/images/foreground_icon_dark.png # Example dark mode logo
+
+  android_12:
+    # The image parameter sets the splash screen icon image. Needs to be 1/3 of the size of the screen.
+    image: assets/images/foreground icon.png
+    # Optional: Specify icon background color
+    # icon_background_color: "#FFFFFF"
+    # Optional: Specify separate dark mode settings for Android 12+
+    # image_dark: assets/images/foreground_icon_dark.png
+    # color_dark: "#333333"
+    # icon_background_color_dark: "#333333"
+
+  # Optional: Configure web splash screen
+  # web: false # Set to true to enable web splash screen

@@ -1,22 +1,16 @@
+import 'dart:convert'; // Added for jsonEncode/jsonDecode
 import 'package:flutter/foundation.dart';
 import 'workout_point_model.dart';
 
 /// Enum representing different types of workouts
-enum WorkoutType {
-  run,
-  walk,
-  hike,
-  cycle,
-  treadmill,
-  other
-}
+enum WorkoutType { run, walk, hike, cycle, treadmill, other }
 
 /// Extension to convert WorkoutType to/from string
 extension WorkoutTypeExtension on WorkoutType {
   String toShortString() {
     return toString().split('.').last;
   }
-  
+
   static WorkoutType fromString(String typeStr) {
     return WorkoutType.values.firstWhere(
       (e) => e.toShortString() == typeStr.toLowerCase(),
@@ -41,7 +35,8 @@ class WorkoutModel {
   final List<WorkoutPointModel> routePoints; // GPS points of the workout route
   final String? notes; // User notes about the workout
   final bool isManualEntry; // Whether this workout was manually entered
-  
+  final List<Duration>? splits; // Added: List of split times (Duration)
+
   const WorkoutModel({
     this.id,
     required this.date,
@@ -57,28 +52,53 @@ class WorkoutModel {
     this.routePoints = const [],
     this.notes,
     this.isManualEntry = false,
+    this.splits, // Added
   });
-  
+
   /// Create a workout from a database map
-  factory WorkoutModel.fromMap(Map<String, dynamic> map, {List<WorkoutPointModel>? points}) {
+  factory WorkoutModel.fromMap(
+    Map<String, dynamic> map, {
+    List<WorkoutPointModel>? points,
+  }) {
     return WorkoutModel(
       id: map['id'] as int?,
       date: DateTime.parse(map['date'] as String),
       type: WorkoutTypeExtension.fromString(map['type'] as String),
       duration: Duration(seconds: map['duration'] as int),
-      distance: map['distance'] != null ? (map['distance'] as num).toDouble() : null,
+      distance:
+          map['distance'] != null ? (map['distance'] as num).toDouble() : null,
       calories: map['calories'] as int?,
-      avgPace: map['avg_pace'] != null ? (map['avg_pace'] as num).toDouble() : null,
-      avgSpeed: map['avg_speed'] != null ? (map['avg_speed'] as num).toDouble() : null,
-      maxSpeed: map['max_speed'] != null ? (map['max_speed'] as num).toDouble() : null,
-      elevationGain: map['elevation_gain'] != null ? (map['elevation_gain'] as num).toDouble() : null,
-      elevationLoss: map['elevation_loss'] != null ? (map['elevation_loss'] as num).toDouble() : null,
+      avgPace:
+          map['avg_pace'] != null ? (map['avg_pace'] as num).toDouble() : null,
+      avgSpeed:
+          map['avg_speed'] != null
+              ? (map['avg_speed'] as num).toDouble()
+              : null,
+      maxSpeed:
+          map['max_speed'] != null
+              ? (map['max_speed'] as num).toDouble()
+              : null,
+      elevationGain:
+          map['elevation_gain'] != null
+              ? (map['elevation_gain'] as num).toDouble()
+              : null,
+      elevationLoss:
+          map['elevation_loss'] != null
+              ? (map['elevation_loss'] as num).toDouble()
+              : null,
       routePoints: points ?? [],
       notes: map['notes'] as String?,
       isManualEntry: (map['is_manual_entry'] as int? ?? 0) == 1,
+      // Deserialize splits from JSON string (assuming stored as list of seconds)
+      splits:
+          map['splits'] != null
+              ? (jsonDecode(map['splits'] as String) as List<dynamic>)
+                  .map((seconds) => Duration(seconds: seconds as int))
+                  .toList()
+              : null,
     );
   }
-  
+
   /// Convert workout to a map for database storage
   Map<String, dynamic> toMap() {
     return {
@@ -95,9 +115,14 @@ class WorkoutModel {
       'elevation_loss': elevationLoss,
       'notes': notes,
       'is_manual_entry': isManualEntry ? 1 : 0,
+      // Serialize splits to JSON string (list of seconds)
+      'splits':
+          splits != null
+              ? jsonEncode(splits!.map((d) => d.inSeconds).toList())
+              : null,
     };
   }
-  
+
   /// Create a copy of this workout with modified fields
   WorkoutModel copyWith({
     int? id,
@@ -114,6 +139,7 @@ class WorkoutModel {
     List<WorkoutPointModel>? routePoints,
     String? notes,
     bool? isManualEntry,
+    List<Duration>? splits, // Added
   }) {
     return WorkoutModel(
       id: id ?? this.id,
@@ -130,35 +156,37 @@ class WorkoutModel {
       routePoints: routePoints ?? this.routePoints,
       notes: notes ?? this.notes,
       isManualEntry: isManualEntry ?? this.isManualEntry,
+      splits: splits ?? this.splits, // Added
     );
   }
-  
+
   /// Calculate metrics based on route points
   /// Returns a new WorkoutModel with calculated metrics
   WorkoutModel calculateMetrics() {
     if (routePoints.isEmpty) return this;
-    
+
     // Sort points by timestamp
     final sortedPoints = List<WorkoutPointModel>.from(routePoints)
       ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
-    
+
     // Calculate metrics
     double totalDistance = 0.0;
     double totalElevationGain = 0.0;
     double totalElevationLoss = 0.0;
     double? maxSpeedValue;
-    
+
     for (int i = 1; i < sortedPoints.length; i++) {
       final prev = sortedPoints[i - 1];
       final curr = sortedPoints[i];
-      
+
       // Update max speed
       if (curr.speed != null) {
-        maxSpeedValue = maxSpeedValue == null 
-            ? curr.speed 
-            : (curr.speed! > maxSpeedValue ? curr.speed : maxSpeedValue);
+        maxSpeedValue =
+            maxSpeedValue == null
+                ? curr.speed
+                : (curr.speed! > maxSpeedValue ? curr.speed : maxSpeedValue);
       }
-      
+
       // Calculate elevation changes
       if (prev.elevation != null && curr.elevation != null) {
         final elevDiff = curr.elevation! - prev.elevation!;
@@ -168,33 +196,39 @@ class WorkoutModel {
           totalElevationLoss += elevDiff.abs();
         }
       }
-      
+
       // Calculate distance between points using Haversine formula
       // This would typically be done by a dedicated service
       // For now, we'll assume the points already have calculated distances
       // and just use the speed and time difference as an approximation
       if (curr.speed != null) {
-        final timeDiffSeconds = curr.timestamp.difference(prev.timestamp).inSeconds;
-        totalDistance += (curr.speed! * timeDiffSeconds) / 1000; // Convert m/s to km
+        final timeDiffSeconds =
+            curr.timestamp.difference(prev.timestamp).inSeconds;
+        totalDistance +=
+            (curr.speed! * timeDiffSeconds) / 1000; // Convert m/s to km
       }
     }
-    
+
     // Calculate average speed and pace
     final durationHours = duration.inSeconds / 3600;
-    final avgSpeedValue = distance != null && durationHours > 0 
-        ? distance! / durationHours 
-        : null;
-    
-    final avgPaceValue = distance != null && distance! > 0 
-        ? duration.inSeconds / distance! 
-        : null;
-    
+    final avgSpeedValue =
+        distance != null && durationHours > 0
+            ? distance! / durationHours
+            : null;
+
+    final avgPaceValue =
+        distance != null && distance! > 0
+            ? duration.inSeconds / distance!
+            : null;
+
     // Calculate calories (simplified formula)
     // A more accurate calculation would be done by a dedicated service
-    final caloriesValue = distance != null 
-        ? (distance! * 60).round() // Very rough estimate: ~60 calories per km
-        : null;
-    
+    final caloriesValue =
+        distance != null
+            ? (distance! * 60)
+                .round() // Very rough estimate: ~60 calories per km
+            : null;
+
     return copyWith(
       distance: distance ?? totalDistance,
       elevationGain: totalElevationGain > 0 ? totalElevationGain : null,
@@ -205,12 +239,12 @@ class WorkoutModel {
       calories: caloriesValue,
     );
   }
-  
+
   @override
   String toString() {
     return 'WorkoutModel(id: $id, date: $date, type: $type, duration: $duration, distance: $distance)';
   }
-  
+
   @override
   bool operator ==(Object other) {
     if (identical(this, other)) return true;
@@ -228,9 +262,10 @@ class WorkoutModel {
         other.elevationLoss == elevationLoss &&
         listEquals(other.routePoints, routePoints) &&
         other.notes == notes &&
-        other.isManualEntry == isManualEntry;
+        other.isManualEntry == isManualEntry &&
+        listEquals(other.splits, splits); // Added
   }
-  
+
   @override
   int get hashCode {
     return id.hashCode ^
@@ -246,6 +281,7 @@ class WorkoutModel {
         elevationLoss.hashCode ^
         routePoints.hashCode ^
         notes.hashCode ^
-        isManualEntry.hashCode;
+        isManualEntry.hashCode ^
+        splits.hashCode; // Added
   }
 }
